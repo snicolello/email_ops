@@ -66,3 +66,12 @@ def test_provider_isolation_and_read_only_api():
     assert len(fetch_threads(Api(), "in:inbox", 1)) == 1
     assert [x[0] for x in endpoint.calls] == ["list", "get"]
 
+
+def test_sample_informed_routing():
+    promotion = Thread("gmail", "p", (Message("1", "shop@example.com", OWNER, "Offer", "Ends soon", "1", ("CATEGORY_PROMOTIONS",)),))
+    linkedin = Thread("gmail", "j", (msg("2", "LinkedIn <jobs-noreply@linkedin.com>", "Role posted on 9/21/26", "View jobs in United States"),))
+    receipt = Thread("gmail", "r", (msg("3", "billing@example.com", "Thank you for your payment", "Payment confirmation"),))
+    assert decide(promotion, "stephen@example.com").route == "NO_ACTION"
+    assert decide(linkedin, "stephen@example.com").event_type == "job_alert"
+    assert decide(receipt, "stephen@example.com").event_type == "payment_confirmation"
+

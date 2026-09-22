@@ -19,6 +19,7 @@ class Message:
     subject: str
     body: str
     timestamp: str
+    labels: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,8 @@ def decide(thread: Thread, owner: str) -> Decision:
     text = f"{last.subject}\n{last.body}".lower()
     sender = last.sender.lower()
     owner = owner.lower()
+    if "CATEGORY_PROMOTIONS" in last.labels and not re.search(r"\b(interview|application|recruiter|job)\b", text):
+        return Decision("NO_ACTION", "Gmail promotion category without operational marker", 0.7)
     if owner and owner in sender:
         if re.search(r"\b(following up|checking in|please send|could you send|waiting for)\b", text):
             return Decision("WAITING_ON_OTHER", "owner requested a response", 0.7, last.subject)
@@ -54,10 +57,14 @@ def decide(thread: Thread, owner: str) -> Decision:
         return Decision("STEPHEN_ACTION", "explicit request to owner", 0.8, last.subject)
     if re.search(r"\b(job alert|jobs for you|new jobs matching)\b", text):
         return Decision("OPERATIONAL_EVIDENCE", "job alert", 0.75, last.subject, "job_alert")
+    if ("linkedin.com" in sender and re.search(r"\bposted on \d|view jobs in\b", text)) or ("wellfound.com" in sender and "new jobs" in text):
+        return Decision("OPERATIONAL_EVIDENCE", "job listing notification", 0.7, last.subject, "job_alert")
     if re.search(r"\b(application received|application confirmation|we received your application)\b", text):
         return Decision("OPERATIONAL_EVIDENCE", "application confirmation", 0.75, last.subject, "application_confirmation")
     if re.search(r"\b(receipt|order confirmation)\b", text):
         return Decision("OPERATIONAL_EVIDENCE", "receipt or order", 0.65, last.subject, "receipt")
+    if "payment confirmation" in text or "thank you for your payment" in text:
+        return Decision("OPERATIONAL_EVIDENCE", "payment confirmation", 0.65, last.subject, "payment_confirmation")
     if re.search(r"\b(for your records|reference number|no action required)\b", text):
         return Decision("REFERENCE", "explicit reference marker", 0.7)
     return Decision("NEEDS_JUDGMENT", "no safe deterministic route", 0.3)

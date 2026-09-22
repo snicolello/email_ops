@@ -28,7 +28,8 @@ def normalize(raw: dict) -> Thread:
         headers = {h["name"].lower(): h.get("value", "") for h in payload.get("headers", [])}
         messages.append(Message(str(item["id"]), headers.get("from", ""),
                                 headers.get("to", ""), headers.get("subject", ""),
-                                _body(payload), item.get("internalDate", "")))
+                                _body(payload), item.get("internalDate", ""),
+                                tuple(item.get("labelIds", []))))
     return Thread("gmail", str(raw["id"]), tuple(messages))
 
 
