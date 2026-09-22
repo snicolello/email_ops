@@ -1,0 +1,13 @@
+.env
+credentials.json
+client_secret*.json
+token*.json
+*.db
+*.sqlite*
+data/
+private/
+__pycache__/
+.pytest_cache/
+.venv/
+*.pyc
+
