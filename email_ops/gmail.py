@@ -3,22 +3,57 @@
 from __future__ import annotations
 
 import base64
+from html.parser import HTMLParser
 from pathlib import Path
-from email.utils import parsedate_to_datetime
 from .core import Message, Thread
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
 
-def _body(part: dict) -> str:
-    if part.get("mimeType") == "text/plain" and part.get("body", {}).get("data"):
+def _part_text(part: dict, mime_type: str) -> str:
+    if part.get("mimeType") == mime_type and part.get("body", {}).get("data"):
         raw = part["body"]["data"]
         return base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)).decode("utf-8", "replace")
     for child in part.get("parts", []):
-        value = _body(child)
+        value = _part_text(child, mime_type)
         if value:
             return value
     return ""
+
+
+class _HTMLText(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.chunks = []
+        self.hidden = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in {"script", "style"}:
+            self.hidden += 1
+        elif tag in {"br", "p", "div", "li", "tr", "td", "th"}:
+            self.chunks.append(" ")
+
+    def handle_endtag(self, tag):
+        if tag in {"script", "style"} and self.hidden:
+            self.hidden -= 1
+        elif tag in {"p", "div", "li", "tr", "td", "th"}:
+            self.chunks.append(" ")
+
+    def handle_data(self, data):
+        if not self.hidden:
+            self.chunks.append(data)
+
+
+def _body(part: dict) -> str:
+    plain = _part_text(part, "text/plain")
+    if plain.strip():
+        return plain
+    html = _part_text(part, "text/html")
+    if not html:
+        return ""
+    parser = _HTMLText()
+    parser.feed(html)
+    return " ".join("".join(parser.chunks).split())
 
 
 def normalize(raw: dict) -> Thread:
@@ -58,4 +93,3 @@ def fetch_threads(api, query: str, limit: int) -> list[Thread]:
     refs = response.get("threads", [])[:limit]
     return [normalize(api.users().threads().get(userId="me", id=ref["id"], format="full").execute())
             for ref in refs]
-
