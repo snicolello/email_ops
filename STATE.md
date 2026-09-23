@@ -4,7 +4,7 @@ Updated: 2026-09-22
 
 ## Current baseline
 
-Personal project with source Issue #1 as the v0.1 contract. This file is the sole repository implementation baseline; the Personal board owns workflow fields. The deterministic read-only Gmail baseline was reviewed and merged in PR #2 at `eea88a5`. Issue #1 remains open, and v0.1 is not production-ready.
+Personal project with source Issue #1 as the v0.1 contract. This file is the sole repository implementation baseline; the Personal board owns workflow fields. The deterministic read-only Gmail baseline was reviewed and merged in PR #2 at `eea88a5`, with a post-merge conservative routing fix on `main` through `151523a`. Issue #1 remains open, and v0.1 is not production-ready.
 
 ## Completed
 
@@ -14,6 +14,7 @@ Personal project with source Issue #1 as the v0.1 contract. This file is the sol
 - Google Cloud project `email-ops-personal` has Gmail API enabled, External/Testing audience, one personal test user, and only `gmail.readonly` configured. Two exposed earlier clients were revoked. A fresh Desktop client completed repository-local OAuth; the saved token grants only `gmail.readonly`. Credentials, token, and database remain private and outside Git.
 - The repository adapter processed a bounded personal Gmail sample of 20 threads and 20 messages: 6 Promotions, 2 Social, 11 Updates, 1 Personal. Initial routes: 9 NEEDS_JUDGMENT, 9 NO_ACTION, 2 OPERATIONAL_EVIDENCE. Two open events (one payment confirmation, one receipt) have source provenance. The exact sample was reconciled twice without duplicate records.
 - Private review of the nine judgment cases found seven HTML-only messages whose bodies were not extracted. PR #2 now falls back to readable HTML when plain text is empty and no longer treats an unsubscribe footer alone as NO_ACTION. All nine exact source threads retained NEEDS_JUDGMENT and provenance after the fix; two in-memory reconciliation passes stayed at 9 threads, 0 records, and 9 decisions. The private case assessment remains outside Git.
+- Three original NO_ACTION rows had used the removed footer shortcut. Exact read-only rerun with current code keeps all three in NEEDS_JUDGMENT; a generic body-only reply phrase was narrowed after it transiently caused a false action. Repeat in-memory reconciliation stayed at 3 threads, 0 records, and 3 decisions. The saved validation database remains the original pre-fix snapshot.
 
 ## Pending
 
