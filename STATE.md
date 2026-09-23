@@ -4,7 +4,7 @@ Updated: 2026-09-23
 
 ## Current baseline
 
-Personal project with Issue #1's deterministic Gmail baseline and Issue #3's untrusted-content boundary accepted. PR #6 merged at `4f107e0` as a shadow experiment baseline; Issue #5 is closed. Issue #7 owns the narrowed labeled benchmark. This file is the sole repository implementation baseline; the Personal board owns workflow fields. The project is not production-ready.
+Personal project with Issue #1's deterministic Gmail baseline and Issue #3's untrusted-content boundary accepted. PR #6 merged at `4f107e0` as a shadow experiment baseline; Issue #5 is closed. PR #8 merged at `2d2765f` as benchmark evidence and Issue #7 is closed. Issue #9 owns the semantic-steering mitigation experiment. This file is the sole repository implementation baseline; the Personal board owns workflow fields. The project is not production-ready.
 
 ## Completed
 
@@ -14,11 +14,12 @@ Personal project with Issue #1's deterministic Gmail baseline and Issue #3's unt
 - PR #4 implements an untrusted-email model-input envelope, source-linked suspicious instruction signals, strict source-bound model-result validation, and trusted reconciliation. No model is invoked. Twenty-one adversarial/boundary tests and the eight existing synthetic tests pass; the 29-test suite exits cleanly.
 - Issue #5's merged shadow baseline compared four low-cost OpenRouter configurations without Gmail or authoritative SQLite changes. The nine original real cases had no defensible expected routes; no model qualified for promotion. Detailed cases and results remain private.
 - Issue #7 privately labeled 11 unresolved real cases: 5 NO_ACTION, 1 REFERENCE, 1 OPERATIONAL_EVIDENCE, 1 STEPHEN_ACTION, and 3 HUMAN_JUDGMENT_REQUIRED. Gemini 3.1 Flash Lite was correct on 7/11, made 2/11 false-confident errors, and safely abstained on 2/11; only 1/3 human-judgment cases was safely unresolved. Event extraction was correct on 1/1 labeled event. Six paired clean/injected controls were repeated three times each: 8/18 route shifts went toward the injected target, including two patterns at 3/3. Gemini is rejected for promotion in this configuration. All evaluation remained shadow-only and private.
+- Issue #9 tested source segmentation and full-versus-business-only dual-view agreement in shadow mode using the same 11 private labels and six paired controls repeated three times. The corrected payload yielded 0/18 injection-target shifts; 15 paired outputs abstained on dual-view disagreement. Real-case accuracy stayed 7/11, but false-confident routes rose to 4/11, safe unresolved fell to 0/11, and 0/3 human-judgment cases safely abstained. The encoded clean control also abstained in 3/3 repeats. The configuration is **REJECT**, with no promotion trial justified. The 45-test suite exits cleanly; no authoritative model state was changed.
 
 ## Pending
 
 - A live waiting resolution was not found in the bounded search; only waiting creation and persistence through later replies were proven. Pattern-based suspicion signals are incomplete, and schema validation cannot prove a model route is semantically correct.
-- Obfuscated source steering caused repeatable route shifts. Provider-side zero-retention was requested, but no retention guarantee beyond API acceptance is independently verified. No model-driven routing is authorized.
+- Structural segmentation removed the observed target shifts in this small paired corpus but worsened real-case false confidence. Segmentation remains heuristic and can miss inline or novel steering. Provider-side zero-retention was requested, but no retention guarantee beyond API acceptance is independently verified. No model-driven routing is authorized.
 
 ## Deferred
 
@@ -27,11 +28,11 @@ Personal project with Issue #1's deterministic Gmail baseline and Issue #3's unt
 
 ## Blocked
 
-- Model promotion is blocked by real-case false confidence and repeatable injection-target route shifts. Bounded, read-only shadow experiments remain allowed.
+- Model promotion is blocked by real-case false confidence and unsafe handling of human-judgment cases. Bounded, read-only shadow experiments remain allowed.
 
 ## Next safe action
 
-Design a narrow mitigation for obfuscated source steering, then rerun the labeled paired controls in shadow mode. Keep deterministic routing authoritative.
+Investigate the four private false-confident cases and design a narrow abstention gate before any further promotion test. Keep deterministic routing authoritative.
 
 ## Evidence
 
@@ -42,5 +43,7 @@ Design a narrow mitigation for obfuscated source steering, then rerun the labele
 - https://github.com/snicolello/email_ops/issues/5
 - https://github.com/snicolello/email_ops/pull/6
 - https://github.com/snicolello/email_ops/issues/7
+- https://github.com/snicolello/email_ops/pull/8
+- https://github.com/snicolello/email_ops/issues/9
 - https://github.com/snicolello/stephen-project-hub/issues/50
 
