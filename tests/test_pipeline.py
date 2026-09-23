@@ -41,10 +41,13 @@ def test_multi_message_resolves_waiting(tmp_path):
     db = connect(tmp_path / "state.db")
     initial = Thread("gmail", "w", (msg("1", OWNER, "Documents", "Following up, please send documents"),))
     reconcile(db, initial, "stephen@example.com")
-    replied = Thread("gmail", "w", initial.messages + (msg("2", "other@example.com", "Re: Documents", "Attached for your review"),))
+    ambiguous = Thread("gmail", "w", initial.messages + (msg("2", "other@example.com", "Re: Documents", "I will look into it"),))
+    reconcile(db, ambiguous, "stephen@example.com")
+    assert summary(db)["records"] == {"waiting:open": 1}
+    replied = Thread("gmail", "w", ambiguous.messages + (msg("3", "other@example.com", "Re: Documents", "Attached the documents you requested"),))
     assert reconcile(db, replied, "stephen@example.com").route == "NEEDS_JUDGMENT"
     assert summary(db)["records"] == {"waiting:resolved": 1}
-    assert summary(db)["decisions"] == 2
+    assert summary(db)["decisions"] == 3
 
 
 def test_provider_isolation_and_read_only_api():
