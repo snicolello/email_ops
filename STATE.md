@@ -4,7 +4,7 @@ Updated: 2026-09-23
 
 ## Current baseline
 
-Personal project with Issue #1's deterministic Gmail baseline and Issue #3's untrusted-content boundary accepted. PR #8 merged at `2d2765f` as benchmark evidence and Issue #7 is closed. PR #10 merged at `4a60b34` as rejected mitigation evidence and Issue #9 is closed. Issue #11 is closed after private false-confidence analysis. Issue #13's sufficiency experiment was executed in shadow mode and failed its prespecified utility gates. This file is the sole repository implementation baseline; the Personal board owns workflow fields. The project is not production-ready.
+Personal project with Issue #1's deterministic Gmail baseline and Issue #3's untrusted-content boundary accepted. PR #8 merged at `2d2765f` as benchmark evidence and Issue #7 is closed. PR #10 merged at `4a60b34` as rejected mitigation evidence and Issue #9 is closed. Issue #11 is closed after private false-confidence analysis. PR #15 merged at `f4083a9` as rejected Issue #13 calibration evidence, and Issue #13 is closed. Issue #16 governs a Stage A only cheap-model comparison; its first provider request hit a required-control/configuration stop before any case result. This file is the sole repository implementation baseline; the Personal board owns workflow fields. The project is not production-ready.
 
 ## Completed
 
@@ -17,12 +17,14 @@ Personal project with Issue #1's deterministic Gmail baseline and Issue #3's unt
 - Issue #9 tested source segmentation and full-versus-business-only dual-view agreement in shadow mode using the same 11 private labels and six paired controls repeated three times. The corrected payload yielded 0/18 injection-target shifts; 15 paired outputs abstained on dual-view disagreement. Real-case accuracy stayed 7/11, but false-confident routes rose to 4/11, safe unresolved fell to 0/11, and 0/3 human-judgment cases safely abstained. Paired clean-control accuracy fell from 18/18 to 15/18 because the encoded clean control abstained in 3/3 repeats. The configuration is **REJECT**, with no promotion trial justified. The 45-test suite exits cleanly; no authoritative model state was changed.
 - Issue #11 privately reviewed all four false-confident real cases. Primary causes: 2 PERSONAL_CONTEXT_REQUIRED, 1 ROUTE_TAXONOMY_GAP in the operational event vocabulary, and 1 MODEL_CAPABILITY_ERROR. Three cases should have abstained; one had sufficient evidence for REFERENCE. No useful content was removed by segmentation in these four cases. A source alternative may contain extra wording in one case, but a material extraction defect was not established. No deterministic code change was justified.
 - Issue #13 froze the existing 11 private cases before implementation or model calls: 8 SUFFICIENT, 2 INSUFFICIENT_PERSONAL_CONTEXT, and 1 INSUFFICIENT_EVENT_VOCABULARY; labels were unchanged. The three-repeat shadow run caught all 9 known-insufficient attempts before Stage B, but subtype accuracy was 3/9. Only 1/8 sufficient cases passed Stage A in all three repeats, and only 1/8 produced a correct final route on a majority of attempts. Real-case false-confident routes were 0/33, largely because Stage A over-abstained. Paired controls yielded 0/18 injection-target shifts but only 3/18 correct clean routes, below the prespecified 15/18 gate. The frozen dual-view Stage B remained unchanged. The run used 87 model calls and $0.03876525 in reported cost; one malformed provider response had no reported cost. The 56-test suite exits cleanly. This configuration is **REJECT** for promotion; no promotion trial is justified.
+- Issue #16 selected `openai/gpt-6-luna-pro`, `qwen/qwen3-30b-a3b-instruct-2507`, and `google/gemini-3.1-flash-lite` for a common-contract Stage A comparison. The exact frozen 11-case corpus and read-only Gmail scope were reverified. Each model had a listed ZDR endpoint supporting structured output. The first request to Luna Pro with required privacy controls returned HTTP 404; the global stop fired after one call, zero case results, and $0 reported cost. No Stage A gate was evaluated and no candidate qualified. The added Stage A only benchmark path and aggregate evaluator passed 63 synthetic tests with clean exit. No Stage B call or authoritative persistence occurred.
 
 ## Pending
 
 - A live waiting resolution was not found in the bounded search; only waiting creation and persistence through later replies were proven. Pattern-based suspicion signals are incomplete, and schema validation cannot prove a model route is semantically correct.
 - Structural segmentation removed the observed target shifts in this small paired corpus but worsened real-case false confidence. Its security signal is useful, but it is **REVISE_LATER** for future model experiments, not an approved classification path. Segmentation remains heuristic and can miss inline or novel steering. Provider-side zero-retention was requested, but no retention guarantee beyond API acceptance is independently verified. No model-driven routing is authorized.
 - The Issue #13 Stage A gate is experimental shadow code only. Its observed over-abstention leaves useful automation unproven. The private frozen labels and detailed results remain outside Git. No authoritative model routing or persistence is enabled.
+- Issue #16 remains open after the provider/configuration hard stop. Whether any candidate can pass the sufficiency gates is unmeasured. Do not resume private model calls until required provider controls and routing are confirmed. No authoritative model routing or persistence is enabled.
 
 ## Deferred
 
@@ -31,11 +33,11 @@ Personal project with Issue #1's deterministic Gmail baseline and Issue #3's unt
 
 ## Blocked
 
-- Model promotion remains blocked: earlier configurations were false-confident on real cases, while Issue #13's gate over-abstained and failed clean-control accuracy. Bounded, read-only shadow experiments remain allowed.
+- Model promotion remains blocked: earlier configurations were false-confident or over-abstained, and Issue #16 produced no case outcomes after its first-call hard stop. Pause LLM semantic escalation pending provider-control diagnosis.
 
 ## Next safe action
 
-Review the rejected Issue #13 aggregate result, then decide whether a separately governed calibration design is worth testing. Keep deterministic routing authoritative.
+Diagnose the Issue #16 first-call HTTP 404 using provider routing metadata without private mail; keep the benchmark stopped until required controls are confirmed. Keep deterministic routing authoritative.
 
 ## Evidence
 
@@ -51,5 +53,7 @@ Review the rejected Issue #13 aggregate result, then decide whether a separately
 - https://github.com/snicolello/email_ops/pull/10
 - https://github.com/snicolello/email_ops/issues/11
 - https://github.com/snicolello/email_ops/issues/13
+- https://github.com/snicolello/email_ops/pull/15
+- https://github.com/snicolello/email_ops/issues/16
 - https://github.com/snicolello/stephen-project-hub/issues/50
 
