@@ -20,6 +20,27 @@ def test_gmail_normalization_keeps_provenance_and_plain_text():
         "gmail", "t1", "m1", "body")
 
 
+def test_html_only_message_has_readable_body_without_script_or_style():
+    html = b"<style>ignore me</style><p>Payment&nbsp;update</p><script>ignore too</script><div>Please review</div>"
+    raw = {"id": "t2", "messages": [{"id": "m2", "internalDate": "2", "payload": {
+        "mimeType": "multipart/alternative", "parts": [
+            {"mimeType": "text/plain", "body": {}},
+            {"mimeType": "text/html", "body": {"data": base64.urlsafe_b64encode(html).decode()}},
+        ]}}]}
+    thread = normalize(raw)
+    assert thread.messages[0].body == "Payment update Please review"
+    assert (thread.provider, thread.id, thread.messages[0].id) == ("gmail", "t2", "m2")
+
+
+def test_plain_text_is_preferred_to_html_when_both_have_data():
+    raw = {"id": "t3", "messages": [{"id": "m3", "internalDate": "3", "payload": {
+        "mimeType": "multipart/alternative", "parts": [
+            {"mimeType": "text/html", "body": {"data": base64.urlsafe_b64encode(b"<p>HTML copy</p>").decode()}},
+            {"mimeType": "text/plain", "body": {"data": base64.urlsafe_b64encode(b"Plain copy").decode()}},
+        ]}}]}
+    assert normalize(raw).messages[0].body == "Plain copy"
+
+
 def test_routing_and_event_boundary(tmp_path):
     db = connect(tmp_path / "state.db")
     action = Thread("gmail", "a", (msg("1", "recruiter@example.com", "Interview invitation", "Please schedule an interview"),))
@@ -78,3 +99,11 @@ def test_sample_informed_routing():
     assert decide(linkedin, "stephen@example.com").event_type == "job_alert"
     assert decide(receipt, "stephen@example.com").event_type == "payment_confirmation"
 
+
+def test_unsubscribe_footer_does_not_hide_an_action_or_create_false_no_action():
+    action = Thread("gmail", "a-footer", (msg("1", "sender@example.com", "Response needed",
+        "Please reply with the requested information. Unsubscribe from these messages."),))
+    unclear = Thread("gmail", "u-footer", (msg("2", "sender@example.com", "Account update",
+        "An update to your account. Manage preferences."),))
+    assert decide(action, "stephen@example.com").route == "STEPHEN_ACTION"
+    assert decide(unclear, "stephen@example.com").route == "NEEDS_JUDGMENT"
