@@ -86,15 +86,17 @@ def validate_sufficiency_result(envelope: ModelInputEnvelope, result: object) ->
 class SufficiencyClient:
     """Small Stage A transport; the Stage B transport remains unchanged."""
 
-    def __init__(self, *, api_key: str | None = None, timeout_seconds: int = 30):
+    def __init__(self, *, api_key: str | None = None, timeout_seconds: int = 30,
+                 allowed_model_ids: tuple[str, ...] = (MODEL_ID,)):
         self._api_key = api_key if api_key is not None else os.environ.get("OPENROUTER_API_KEY")
         if not self._api_key:
             raise ValueError("OPENROUTER_API_KEY is not configured")
         self.timeout_seconds = timeout_seconds
+        self.allowed_model_ids = allowed_model_ids
 
     def complete(self, model_id: str, payload: dict) -> ProviderReply:
-        if model_id != MODEL_ID:
-            raise ValueError("Issue #13 permits only its frozen model")
+        if model_id not in self.allowed_model_ids:
+            raise ValueError("model is not in this Stage A transport's allowlist")
         body = {
             "model": model_id,
             "messages": [{"role": "system", "content": SUFFICIENCY_PROMPT},
@@ -204,7 +206,8 @@ def assess_sufficiency(thread: Thread, owner: str, model_id: str,
 def continue_after_sufficiency(thread: Thread, owner: str, model_id: str,
                                stage_a: SufficiencyOutcome, client) -> DualViewOutcome | None:
     """Return None unless this exact thread passed Stage A; never persist."""
-    if not stage_a.accepted or stage_a.state != "SUFFICIENT" or stage_a.model_id != model_id:
+    if (model_id != MODEL_ID or not stage_a.accepted or stage_a.state != "SUFFICIENT"
+            or stage_a.model_id != model_id):
         return None
     envelope = prepare_model_input(thread, owner)
     if envelope is None or envelope.suspicious_signals:
