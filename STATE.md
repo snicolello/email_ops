@@ -4,7 +4,7 @@ Updated: 2026-09-23
 
 ## Current baseline
 
-Personal project with Issue #1's deterministic Gmail baseline and Issue #3's untrusted-content boundary accepted. PR #8 merged at `2d2765f` as benchmark evidence and Issue #7 is closed. PR #10 merged at `4a60b34` as rejected mitigation evidence and Issue #9 is closed. Issue #11 is closed after private false-confidence analysis. This file is the sole repository implementation baseline; the Personal board owns workflow fields. The project is not production-ready.
+Personal project with Issue #1's deterministic Gmail baseline and Issue #3's untrusted-content boundary accepted. PR #8 merged at `2d2765f` as benchmark evidence and Issue #7 is closed. PR #10 merged at `4a60b34` as rejected mitigation evidence and Issue #9 is closed. Issue #11 is closed after private false-confidence analysis. Issue #13 defines the next bounded shadow experiment; no model calls have been made for it. This file is the sole repository implementation baseline; the Personal board owns workflow fields. The project is not production-ready.
 
 ## Completed
 
@@ -21,6 +21,7 @@ Personal project with Issue #1's deterministic Gmail baseline and Issue #3's unt
 
 - A live waiting resolution was not found in the bounded search; only waiting creation and persistence through later replies were proven. Pattern-based suspicion signals are incomplete, and schema validation cannot prove a model route is semantically correct.
 - Structural segmentation removed the observed target shifts in this small paired corpus but worsened real-case false confidence. Its security signal is useful, but it is **REVISE_LATER** for future model experiments, not an approved classification path. Segmentation remains heuristic and can miss inline or novel steering. Provider-side zero-retention was requested, but no retention guarantee beyond API acceptance is independently verified. No model-driven routing is authorized.
+- Issue #13 freezes acceptance criteria for a separate evidence-sufficiency gate before the existing dual-view shadow classifier, using the 11-case private corpus and existing paired controls. The contract requires all three known insufficient cases to abstain across three repeats while at least seven of eight route-labeled sufficient cases pass consistently. No implementation or model call has begun.
 
 ## Deferred
 
@@ -33,7 +34,7 @@ Personal project with Issue #1's deterministic Gmail baseline and Issue #3's unt
 
 ## Next safe action
 
-Design one bounded abstention-calibration experiment around evidence sufficiency and personal-context recognition using the existing private corpus; do not start model routing. Keep deterministic routing authoritative.
+Under Issue #13, confirm and freeze private sufficiency labels before implementing the bounded shadow-only gate. Keep deterministic routing authoritative.
 
 ## Evidence
 
@@ -48,5 +49,6 @@ Design one bounded abstention-calibration experiment around evidence sufficiency
 - https://github.com/snicolello/email_ops/issues/9
 - https://github.com/snicolello/email_ops/pull/10
 - https://github.com/snicolello/email_ops/issues/11
+- https://github.com/snicolello/email_ops/issues/13
 - https://github.com/snicolello/stephen-project-hub/issues/50
 
