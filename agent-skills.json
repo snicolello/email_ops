@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "environment": "personal-codex-local",
+  "install_root": "user Codex skills directory",
+  "source_policy": "Canonical source is the Personal Agent Skills repository; assignment does not mean prompt loading. Digest is an observed installed SKILL.md SHA-256, not a compatibility guarantee.",
+  "skills": [
+    {
+      "id": "project-onboarding",
+      "classification": "role-specific",
+      "canonical_source": "https://github.com/snicolello/stephen-agent-skills/tree/1601a848ba7b63fa2f96ae32224d243fe3907479/skills/stephen/project-onboarding",
+      "assigned": true,
+      "installed_skill_sha256": "EB2BD33E1F9529221746A0BD781B704727A6F1C74EEB3612CC010E9649618A0B"
+    },
+    {
+      "id": "project-handoff",
+      "classification": "core-candidate",
+      "canonical_source": "https://github.com/snicolello/stephen-agent-skills/tree/main/skills/stephen/project-handoff",
+      "assigned": false,
+      "installed_skill_sha256": null
+    },
+    {
+      "id": "evidence-first-analysis",
+      "classification": "role-specific",
+      "canonical_source": "https://github.com/snicolello/stephen-agent-skills/tree/main/skills/stephen/evidence-first-analysis",
+      "assigned": false,
+      "installed_skill_sha256": null
+    },
+    {
+      "id": "acquire-codebase-knowledge",
+      "classification": "optional-experimental",
+      "canonical_source": "https://github.com/snicolello/stephen-agent-skills/tree/main/skills/upstream/acquire-codebase-knowledge",
+      "assigned": false,
+      "installed_skill_sha256": null
+    }
+  ],
+  "deferred": ["No approved Personal proportional-validation skill verified", "No product-specific Email Ops skill until repeated behavior justifies one"]
+}
+
