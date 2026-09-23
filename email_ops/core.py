@@ -109,7 +109,8 @@ def reconcile(db: sqlite3.Connection, thread: Thread, owner: str) -> Decision:
     last = thread.messages[-1]
     now = datetime.now(timezone.utc).isoformat()
     thread_id = identity("thread", thread)
-    old = db.execute("SELECT route FROM threads WHERE id=?", (thread_id,)).fetchone()
+    open_waiting = db.execute("SELECT 1 FROM records WHERE id=? AND kind='waiting' AND status='open'",
+                              (identity("record", thread),)).fetchone()
     with db:
         db.execute("""INSERT INTO threads VALUES (?,?,?,?,?,?,?)
             ON CONFLICT(id) DO UPDATE SET subject=excluded.subject, route=excluded.route,
@@ -126,8 +127,9 @@ def reconcile(db: sqlite3.Connection, thread: Thread, owner: str) -> Decision:
                 updated_at=excluded.updated_at""",
                 (record_id, thread_id, kind, decision.description or last.subject,
                  "open", decision.event_type, last.id, decision.confidence, now))
-        elif old and old[0] in ("STEPHEN_ACTION", "WAITING_ON_OTHER"):
-            db.execute("UPDATE records SET status='resolved', updated_at=? WHERE id=?",
+        elif open_waiting and owner not in last.sender.lower() and re.search(
+                r"\b(attached|sent the requested|completed the requested)\b", last.body.lower()):
+            db.execute("UPDATE records SET status='resolved', updated_at=? WHERE id=? AND kind='waiting'",
                        (now, identity("record", thread)))
         decision_id = hashlib.sha256(f"{thread_id}:{last.id}:{decision.route}".encode()).hexdigest()[:24]
         db.execute("""INSERT OR IGNORE INTO decisions VALUES (?,?,?,?,?,?,?,?,?)""",
