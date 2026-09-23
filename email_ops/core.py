@@ -51,7 +51,7 @@ def decide(thread: Thread, owner: str) -> Decision:
         if re.search(r"\b(following up|checking in|please send|could you send|waiting for)\b", text):
             return Decision("WAITING_ON_OTHER", "owner requested a response", 0.7, last.subject)
         return Decision("REFERENCE", "latest message sent by owner", 0.55)
-    if re.search(r"\b(interview invitation|schedule an interview|please schedule|action required|please complete|please reply|respond by)\b", text):
+    if re.search(r"\b(interview invitation|schedule an interview|please schedule|action required|please complete|respond by)\b", text):
         return Decision("STEPHEN_ACTION", "explicit request to owner", 0.8, last.subject)
     if re.search(r"\b(job alert|jobs for you|new jobs matching)\b", text):
         return Decision("OPERATIONAL_EVIDENCE", "job alert", 0.75, last.subject, "job_alert")
