@@ -51,8 +51,6 @@ def decide(thread: Thread, owner: str) -> Decision:
         if re.search(r"\b(following up|checking in|please send|could you send|waiting for)\b", text):
             return Decision("WAITING_ON_OTHER", "owner requested a response", 0.7, last.subject)
         return Decision("REFERENCE", "latest message sent by owner", 0.55)
-    if re.search(r"\b(unsubscribe|manage preferences)\b", text) and not re.search(r"\b(interview|application|recruiter)\b", text):
-        return Decision("NO_ACTION", "bulk-mail marker", 0.75)
     if re.search(r"\b(interview invitation|schedule an interview|please schedule|action required|please complete|please reply|respond by)\b", text):
         return Decision("STEPHEN_ACTION", "explicit request to owner", 0.8, last.subject)
     if re.search(r"\b(job alert|jobs for you|new jobs matching)\b", text):
@@ -151,4 +149,3 @@ def normalized_events(db: sqlite3.Connection) -> list[dict]:
                         ON t.id=r.thread_id WHERE r.kind='event' AND r.status='open'""")
     return [dict(zip(("event_id", "type", "summary", "source_provider", "source_thread_id",
                       "source_message_id", "confidence"), row)) for row in rows]
-
