@@ -10,14 +10,15 @@ Personal project with source Issue #1 as the v0.1 contract. This file is the sol
 
 - Standard four-file scaffold and Personal Agent Skills allowlist registration; allowlist PR #25 merged at `0c65b3b`.
 - Personal Hub intake #50 is registered once on board #1. Verified after reload: Project=Email Ops, Workflow=In Progress, Effort=3, Risk=Medium, Priority=P1.
-- Draft PR #2 proposes a read-only Gmail adapter, canonical threads, deterministic routing, SQLite reconciliation, and normalized event output. Five synthetic tests pass with writable temporary storage and pytest cache disabled.
-- A separate connected Gmail review previously inspected 18 threads and 19 messages. It did not exercise repository OAuth or pipeline.
-- Dedicated Google Cloud project `email-ops-personal` has Gmail API enabled. OAuth audience is External/Testing with one personal test user, and the consent configuration lists only `gmail.readonly`. Two Desktop clients were created and revoked after their secrets appeared in task images; no active OAuth client remains.
+- Draft PR #2 proposes the read-only Gmail adapter, canonical threads, deterministic routing, SQLite reconciliation, and normalized event output. Five synthetic tests pass with writable temporary storage and pytest cache disabled.
+- Google Cloud project `email-ops-personal` has Gmail API enabled, External/Testing audience, one personal test user, and only `gmail.readonly` configured. Two earlier clients were revoked after their secrets appeared in task images. A fresh Desktop client was saved outside Git and used for repository-local OAuth; the saved token grants only `gmail.readonly`.
+- The repository adapter and core processed one bounded personal Gmail sample of 20 threads and 20 messages: 6 Promotions, 2 Social, 11 Updates, 1 Personal; no multi-message thread. Routes: 9 NEEDS_JUDGMENT, 9 NO_ACTION, 2 OPERATIONAL_EVIDENCE. Two open events (one payment confirmation, one receipt) have complete source provenance.
+- The exact same in-memory sample was reconciled a second time. SQLite counts remained 20 threads, 2 records, and 20 decisions; no blind duplication.
 
 ## Pending
 
-- Create a fresh Desktop client in a regular desktop browser, save its JSON outside Git without sharing its secret, complete repository-local OAuth, then run the same bounded real-mail sample twice.
-- Review draft PR #2 and compare real-mail outcomes with the proposed rules.
+- Review draft PR #2 and the nine uncertain live cases before accepting or expanding routing rules.
+- Live STEPHEN_ACTION, WAITING_ON_OTHER, and thread-state transition behavior remain unproven by this sample; no multi-message thread was present.
 
 ## Deferred
 
@@ -26,11 +27,11 @@ Personal project with source Issue #1 as the v0.1 contract. This file is the sol
 
 ## Blocked
 
-- The in-app browser's JSON download did not produce a local file, and its download manager was blocked. No client JSON is verified locally, no token exists, and the repository Gmail pipeline has not run against real mail.
+- None for the bounded read-only prototype.
 
 ## Next safe action
 
-Create and download a fresh Desktop client in a regular browser, save its JSON to a private local path, then run repository-local OAuth and the bounded read-only validation twice.
+Review draft PR #2 against the aggregate live results and inspect the nine judgment cases privately before deciding on targeted rule changes or further bounded coverage.
 
 ## Evidence
 
