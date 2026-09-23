@@ -16,7 +16,7 @@ Personal project with source Issue #1 as the v0.1 contract. This file is the sol
 
 ## Pending
 
-- Resolve the Google OAuth audience boundary, securely download the client JSON outside Git, then run the repository OAuth flow and the same bounded real-mail sample twice.
+- Resolve the Google OAuth audience boundary, replace the current Desktop client, securely download the new client JSON outside Git, then run the repository OAuth flow and the same bounded real-mail sample twice.
 - Review draft PR #2 and compare real-mail outcomes with the proposed rules.
 
 ## Deferred
@@ -30,7 +30,7 @@ Personal project with source Issue #1 as the v0.1 contract. This file is the sol
 
 ## Next safe action
 
-Resolve the Google project OAuth audience for personal Gmail without broadening scope, then download the Desktop client JSON to a private local path and run the bounded read-only validation twice.
+Resolve the Google project OAuth audience for personal Gmail without broadening scope, then create a fresh Desktop client, download its JSON to a private local path, and run the bounded read-only validation twice.
 
 ## Evidence
 
