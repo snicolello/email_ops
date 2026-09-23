@@ -4,6 +4,10 @@ client_secret*.json
 token*.json
 *.db
 *.sqlite*
+*.eml
+*.mbox
+*.pst
+*.ost
 data/
 private/
 __pycache__/
