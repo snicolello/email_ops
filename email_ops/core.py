@@ -100,8 +100,10 @@ def connect(path: str | Path) -> sqlite3.Connection:
     return db
 
 
-def reconcile(db: sqlite3.Connection, thread: Thread, owner: str) -> Decision:
-    decision = decide(thread, owner)
+def _persist_decision(db: sqlite3.Connection, thread: Thread, owner: str,
+                      decision: Decision, *, model_provider: str = "deterministic",
+                      model_name: str = "rules-v0.1") -> Decision:
+    """Persist only a decision selected by trusted local routing/validation code."""
     if not thread.messages:
         return decision
     last = thread.messages[-1]
@@ -132,8 +134,12 @@ def reconcile(db: sqlite3.Connection, thread: Thread, owner: str) -> Decision:
         decision_id = hashlib.sha256(f"{thread_id}:{last.id}:{decision.route}".encode()).hexdigest()[:24]
         db.execute("""INSERT OR IGNORE INTO decisions VALUES (?,?,?,?,?,?,?,?,?)""",
                    (decision_id, thread_id, last.id, decision.route, decision.reason,
-                    decision.confidence, "deterministic", "rules-v0.1", now))
+                    decision.confidence, model_provider, model_name, now))
     return decision
+
+
+def reconcile(db: sqlite3.Connection, thread: Thread, owner: str) -> Decision:
+    return _persist_decision(db, thread, owner, decide(thread, owner))
 
 
 def summary(db: sqlite3.Connection) -> dict:
