@@ -4,7 +4,7 @@ Updated: 2026-09-23
 
 ## Current baseline
 
-Personal project with Issue #1's deterministic Gmail baseline and Issue #3's untrusted-content boundary accepted. PR #8 merged at `2d2765f` as benchmark evidence and Issue #7 is closed. PR #10 merged at `4a60b34` as rejected mitigation evidence and Issue #9 is closed. Issue #11 owns private false-confidence analysis. This file is the sole repository implementation baseline; the Personal board owns workflow fields. The project is not production-ready.
+Personal project with Issue #1's deterministic Gmail baseline and Issue #3's untrusted-content boundary accepted. PR #8 merged at `2d2765f` as benchmark evidence and Issue #7 is closed. PR #10 merged at `4a60b34` as rejected mitigation evidence and Issue #9 is closed. Issue #11 is closed after private false-confidence analysis. This file is the sole repository implementation baseline; the Personal board owns workflow fields. The project is not production-ready.
 
 ## Completed
 
