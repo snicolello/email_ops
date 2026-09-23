@@ -102,8 +102,11 @@ def test_sample_informed_routing():
 
 def test_unsubscribe_footer_does_not_hide_an_action_or_create_false_no_action():
     action = Thread("gmail", "a-footer", (msg("1", "sender@example.com", "Response needed",
-        "Please reply with the requested information. Unsubscribe from these messages."),))
+        "Action required: please complete the requested information. Unsubscribe from these messages."),))
     unclear = Thread("gmail", "u-footer", (msg("2", "sender@example.com", "Account update",
         "An update to your account. Manage preferences."),))
+    support_footer = Thread("gmail", "support-footer", (msg("3", "sender@example.com", "Account update",
+        "If you have questions, please reply to this email. Unsubscribe from these messages."),))
     assert decide(action, "stephen@example.com").route == "STEPHEN_ACTION"
     assert decide(unclear, "stephen@example.com").route == "NEEDS_JUDGMENT"
+    assert decide(support_footer, "stephen@example.com").route == "NEEDS_JUDGMENT"
