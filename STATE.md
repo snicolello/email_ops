@@ -4,20 +4,20 @@ Updated: 2026-09-22
 
 ## Current baseline
 
-New Personal project. Source Issue #1 defines the active v0.1 contract. This file is the sole repository implementation baseline; the Personal board owns workflow fields. The v0.1 proposal is in draft PR #2; it is not accepted or production-ready.
+Personal project with source Issue #1 as the v0.1 contract. This file is the sole repository implementation baseline; the Personal board owns workflow fields. The v0.1 implementation remains in draft PR #2, unmerged and unaccepted. It is not production-ready.
 
 ## Completed
 
-- Standard four-file scaffold generated using the installed Personal project-onboarding bootstrap procedure.
-- Read-only Gmail adapter, canonical threads, deterministic routing, SQLite reconciliation, and normalized event output proposed in draft PR #2. Five synthetic tests pass.
-- A separate connected Personal Gmail review fetched 18 bounded threads (19 messages, one multi-message thread). This did not exercise the repository OAuth or pipeline. The sample contained promotional/social mail, job notifications, a payment confirmation, and an ambiguous payment reminder; it did not establish a waiting case or validated action classification.
+- Standard four-file scaffold and Personal Agent Skills allowlist registration; allowlist PR #25 merged at `0c65b3b`.
+- Personal Hub intake #50 is registered once on board #1. Verified after reload: Project=Email Ops, Workflow=In Progress, Effort=3, Risk=Medium, Priority=P1.
+- Draft PR #2 proposes a read-only Gmail adapter, canonical threads, deterministic routing, SQLite reconciliation, and normalized event output. Five synthetic tests pass with writable temporary storage and pytest cache disabled.
+- A separate connected Gmail review previously inspected 18 threads and 19 messages. It did not exercise repository OAuth or pipeline.
+- Dedicated Google Cloud project `email-ops-personal` has Gmail API enabled and a Desktop OAuth client created. The consent configuration selected only `gmail.readonly`.
 
 ## Pending
 
-- Review draft PR #2 and reconcile observed real-mail cases against the repository pipeline.
-- Verify repository-local OAuth against Stephen's personal Gmail, then run a bounded real-mail sample and record aggregate evidence without publishing content.
-- Complete Personal Hub allowlist, intake, and portfolio registration.
-- Personal Hub intake #50 exists; the Personal allowlist edit merged through Agent Skills PR #25 at `0c65b3b`. Live board registration remains unverified.
+- Resolve the Google OAuth audience boundary, securely download the client JSON outside Git, then run the repository OAuth flow and the same bounded real-mail sample twice.
+- Review draft PR #2 and compare real-mail outcomes with the proposed rules.
 
 ## Deferred
 
@@ -26,11 +26,11 @@ New Personal project. Source Issue #1 defines the active v0.1 contract. This fil
 
 ## Blocked
 
-- Repository-local OAuth needs a Google desktop OAuth client configuration kept outside Git.
+- Google reports that OAuth access for the new client is restricted to users within the project's organization unless the consent screen is published and verified. The run stopped before consent. No client JSON was saved locally, no token exists, and the repository Gmail pipeline has not run against real mail.
 
 ## Next safe action
 
-Review draft PR #2, supply a local desktop OAuth client configuration, and run the bounded CLI sample against personal Gmail.
+Resolve the Google project OAuth audience for personal Gmail without broadening scope, then download the Desktop client JSON to a private local path and run the bounded read-only validation twice.
 
 ## Evidence
 
@@ -38,4 +38,3 @@ Review draft PR #2, supply a local desktop OAuth client configuration, and run t
 - https://github.com/snicolello/stephen-project-hub/issues/50
 - https://github.com/snicolello/email_ops/pull/2
 - https://github.com/snicolello/stephen-agent-skills/pull/25
-
