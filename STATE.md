@@ -4,14 +4,14 @@ Updated: 2026-09-23
 
 ## Current baseline
 
-Personal project with source Issue #1 closed as the bounded deterministic Gmail baseline. PR #2 merged at `eea88a5`; `main` was at `4dd7afb` when Issue #3 began. This file is the sole repository implementation baseline; the Personal board owns workflow fields. Issue #3 work is proposed in draft PR #4, unmerged and unaccepted. The project is not production-ready.
+Personal project with source Issue #1 closed as the bounded deterministic Gmail baseline. PR #2 merged at `eea88a5`; `main` was at `4dd7afb` when Issue #3 began. This file is the sole repository implementation baseline; the Personal board owns workflow fields. Issue #3 work is proposed in PR #4, open for review, unmerged and unaccepted. The project is not production-ready.
 
 ## Completed
 
 - Personal Hub intake #50 is registered once on board #1; the Personal Agent Skills allowlist is registered. The Gmail Desktop OAuth client and token remain private, and the granted scope is exactly `gmail.readonly`.
 - The merged v0.1 adapter proved bounded real Gmail ingestion, canonical normalization, source provenance, structured evidence, and repeat reconciliation without duplicate records. The original 20-thread validation database is a pre-remediation snapshot.
 - Issue #3 bounded read-only searches found one explicit live action case and one four-message waiting case. The repository path created one open action. The waiting thread moved NEEDS_JUDGMENT → WAITING_ON_OTHER → NEEDS_JUDGMENT while retaining one open waiting record. Exact repeat processing kept action counts at 1 thread / 1 action / 1 decision and waiting counts at 1 thread / 1 waiting record / 4 decisions. Source provenance matched. Detailed source IDs remain in a private local receipt outside Git.
-- Draft PR #4 proposes an untrusted-email model-input envelope, source-linked suspicious instruction signals, strict source-bound model-result validation, and trusted reconciliation. No model is invoked. Twenty-one adversarial/boundary tests and the eight existing synthetic tests pass; the 29-test suite exits cleanly.
+- PR #4 proposes an untrusted-email model-input envelope, source-linked suspicious instruction signals, strict source-bound model-result validation, and trusted reconciliation. No model is invoked. Twenty-one adversarial/boundary tests and the eight existing synthetic tests pass; the 29-test suite exits cleanly.
 
 ## Pending
 
@@ -29,7 +29,7 @@ Personal project with source Issue #1 closed as the bounded deterministic Gmail 
 
 ## Next safe action
 
-Review draft PR #4 and its adversarial tests against Issue #3, then decide whether to accept the boundary for a separate bounded model experiment.
+Review PR #4 and its adversarial tests against Issue #3, then decide whether to accept the boundary for a separate bounded model experiment.
 
 ## Evidence
 
