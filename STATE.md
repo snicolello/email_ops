@@ -17,7 +17,7 @@ New Personal project. Source Issue #1 defines the active v0.1 contract. This fil
 - Review draft PR #2 and reconcile observed real-mail cases against the repository pipeline.
 - Verify repository-local OAuth against Stephen's personal Gmail, then run a bounded real-mail sample and record aggregate evidence without publishing content.
 - Complete Personal Hub allowlist, intake, and portfolio registration.
-- Personal Hub intake #50 exists; the allowlist edit is proposed in draft Agent Skills PR #25. Live board registration remains unverified.
+- Personal Hub intake #50 exists; the Personal allowlist edit merged through Agent Skills PR #25 at `0c65b3b`. Live board registration remains unverified.
 
 ## Deferred
 
