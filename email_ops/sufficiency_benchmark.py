@@ -19,12 +19,42 @@ CANDIDATE_MODELS = (
     "qwen/qwen3-30b-a3b-instruct-2507",
     "google/gemini-3.1-flash-lite",
 )
+# Pre-benchmark replacements for provider incompatibility only; each value must
+# pass the same synthetic probe before any private case is sent.
+PRE_BENCHMARK_REPLACEMENTS: dict[str, str] = {
+    # Luna Pro exposes no endpoint accepting temperature under require_parameters.
+    "openai/gpt-6-luna-pro": "mistralai/mistral-small-3.2-24b-instruct",
+}
+MAX_BENCHMARK_MODELS = 3
+
+
+def stage_a_allowlist() -> tuple[str, ...]:
+    return CANDIDATE_MODELS + tuple(PRE_BENCHMARK_REPLACEMENTS.values())
+
+
+def select_benchmark_models(dispositions: dict[str, str],
+                            replacements: dict[str, str] | None = None) -> tuple[str, ...]:
+    """Keep probe-cleared originals; swap only control-incompatible ones."""
+    replacements = PRE_BENCHMARK_REPLACEMENTS if replacements is None else replacements
+    selected = []
+    for original in CANDIDATE_MODELS:
+        disposition = dispositions.get(original)
+        if disposition == "PROBE_PASS":
+            selected.append(original)
+        elif original in replacements:
+            if disposition != "REJECT_REQUIRED_CONTROLS_UNAVAILABLE":
+                raise ValueError("replacement is approved only for unavailable controls")
+            if dispositions.get(replacements[original]) == "PROBE_PASS":
+                selected.append(replacements[original])
+    if any(model not in CANDIDATE_MODELS for model in replacements) or len(set(selected)) != len(selected):
+        raise ValueError("invalid replacement mapping")
+    return tuple(selected[:MAX_BENCHMARK_MODELS])
 
 
 def assess_candidate(thread: Thread, owner: str, model_id: str,
                      client: SufficiencyClient) -> SufficiencyOutcome:
     """Use the frozen Stage A prompt/payload/validator, never Stage B."""
-    if model_id not in CANDIDATE_MODELS or model_id not in client.allowed_model_ids:
+    if model_id not in stage_a_allowlist() or model_id not in client.allowed_model_ids:
         raise ValueError("unapproved Stage A benchmark model")
     envelope = prepare_model_input(thread, owner)
     if envelope is None:
@@ -43,16 +73,20 @@ def assess_candidate(thread: Thread, owner: str, model_id: str,
                                   "NEEDS_JUDGMENT", "provider_model_mismatch", 1,
                                   reply.input_tokens, reply.output_tokens,
                                   reply.latency_ms, reply.cost_usd)
+    provider_error = getattr(reply, "provider_error", None)
+    provider_name = getattr(reply, "provider_name", None)
     if reply.error_code:
         return SufficiencyOutcome(model_id, *identity, False, None,
                                   "NEEDS_JUDGMENT", reply.error_code, 1,
                                   reply.input_tokens, reply.output_tokens,
-                                  reply.latency_ms, reply.cost_usd)
+                                  reply.latency_ms, reply.cost_usd,
+                                  provider_error, provider_name)
     state, rejection = validate_sufficiency_result(envelope, reply.result)
     return SufficiencyOutcome(model_id, *identity, rejection is None, state,
                               "NEEDS_JUDGMENT", rejection, 1,
                               reply.input_tokens, reply.output_tokens,
-                              reply.latency_ms, reply.cost_usd)
+                              reply.latency_ms, reply.cost_usd,
+                              None, provider_name)
 
 
 @dataclass(frozen=True)
@@ -68,7 +102,7 @@ def aggregate_attempts(attempts: list[LabeledAttempt]) -> dict:
     if not attempts:
         raise ValueError("no attempts")
     model_ids = {item.outcome.model_id for item in attempts}
-    if len(model_ids) != 1 or next(iter(model_ids)) not in CANDIDATE_MODELS:
+    if len(model_ids) != 1 or next(iter(model_ids)) not in stage_a_allowlist():
         raise ValueError("mixed or unsupported model")
     by_case: dict[str, list[LabeledAttempt]] = defaultdict(list)
     for item in attempts:
