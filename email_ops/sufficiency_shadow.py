@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import json
 import math
 import os
+import re
 import time
 
 import requests
@@ -59,6 +60,104 @@ insufficient state. Return only the exact structured result.
 """
 
 
+ERROR_BODY_LIMIT_BYTES = 4096
+ERROR_MESSAGE_LIMIT = 160
+_SAFE_CODE = re.compile(r"[A-Za-z0-9_.:-]{1,64}")
+_SAFE_PROVIDER = re.compile(r"[A-Za-z0-9 _./()-]{1,64}")
+_REDACTIONS = (
+    re.compile(r"[\"'`“‘][^\"'`”’]{0,400}[\"'`”’]"),
+    re.compile(r"\bBearer\s+\S+", re.I),
+    re.compile(r"\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}"),
+    re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"),
+    re.compile(r"\b[0-9a-fA-F]{24,}\b"),
+    re.compile(r"(?=[A-Za-z0-9+/_=-]*\d)[A-Za-z0-9+/_=-]{32,}"),
+)
+
+
+@dataclass(frozen=True)
+class ProviderError:
+    """Only bounded, sanitized fields from a non-success provider response."""
+
+    http_status: int
+    code: str | None
+    message: str | None
+    provider_name: str | None
+
+
+@dataclass(frozen=True)
+class StageAReply(ProviderReply):
+    provider_error: ProviderError | None = None
+    provider_name: str | None = None
+
+
+def _private_words(payload: dict | None) -> frozenset[str]:
+    words: set[str] = set()
+    for message in (payload or {}).get("untrusted_source", ()):
+        for value in message.values():
+            if isinstance(value, str):
+                words.update(w.lower() for w in re.findall(r"\w{5,}", value))
+    context = (payload or {}).get("trusted_context", {})
+    for key in ("source_thread_id", "source_message_id"):
+        if isinstance(context.get(key), str):
+            words.update(w.lower() for w in re.findall(r"\w{5,}", context[key]))
+    return frozenset(words)
+
+
+def sanitize_error_message(message: object, payload: dict | None = None) -> str | None:
+    """Redact echoed request content and secret-like material, then cap length."""
+    if not isinstance(message, str):
+        return None
+    text = " ".join(message.split())
+    for pattern in _REDACTIONS:
+        text = pattern.sub("[redacted]", text)
+    literals = [value for value in (payload or {}).get("trusted_context", {}).values()
+                if isinstance(value, str) and len(value) >= 4]
+    for message in (payload or {}).get("untrusted_source", ()):
+        literals += [value for key, value in message.items()
+                     if key != "trust_level" and isinstance(value, str) and len(value) >= 4]
+    for literal in sorted(set(literals), key=len, reverse=True):
+        text = re.sub(re.escape(literal), "[redacted]", text, flags=re.I)
+    private = _private_words(payload)
+    if private:
+        text = re.sub(r"\w{5,}", lambda m: "[redacted]" if m.group().lower() in private
+                      else m.group(), text)
+    text = text[:ERROR_MESSAGE_LIMIT].strip()
+    return text or None
+
+
+def parse_provider_error(status: int, body: bytes, payload: dict | None = None) -> ProviderError:
+    """Keep status, code, sanitized message, and provider name; never raw metadata."""
+    code = message = provider = None
+    try:
+        document = json.loads(body[:ERROR_BODY_LIMIT_BYTES])
+        error = document.get("error") if isinstance(document, dict) else None
+    except (ValueError, UnicodeDecodeError):
+        error = None
+    if isinstance(error, dict):
+        raw_code = error.get("code")
+        if type(raw_code) is int or (isinstance(raw_code, str) and _SAFE_CODE.fullmatch(raw_code)):
+            code = str(raw_code)
+        message = sanitize_error_message(error.get("message"), payload)
+        metadata = error.get("metadata")
+        name = metadata.get("provider_name") if isinstance(metadata, dict) else None
+        if isinstance(name, str) and _SAFE_PROVIDER.fullmatch(name):
+            provider = name
+    return ProviderError(status, code, message, provider)
+
+
+def _read_error_body(response) -> bytes:
+    chunks, size = [], 0
+    try:
+        for chunk in response.iter_content(chunk_size=1024):
+            chunks.append(chunk)
+            size += len(chunk)
+            if size >= ERROR_BODY_LIMIT_BYTES:
+                break
+    except requests.RequestException:
+        pass
+    return b"".join(chunks)[:ERROR_BODY_LIMIT_BYTES]
+
+
 def sufficiency_payload(envelope: ModelInputEnvelope) -> dict:
     payload = envelope.to_payload()  # Issue #3 suspicious-source stop
     payload["trusted_context"]["task"] = "assess_evidence_sufficiency_v1"
@@ -86,15 +185,17 @@ def validate_sufficiency_result(envelope: ModelInputEnvelope, result: object) ->
 class SufficiencyClient:
     """Small Stage A transport; the Stage B transport remains unchanged."""
 
-    def __init__(self, *, api_key: str | None = None, timeout_seconds: int = 30):
+    def __init__(self, *, api_key: str | None = None, timeout_seconds: int = 30,
+                 allowed_model_ids: tuple[str, ...] = (MODEL_ID,)):
         self._api_key = api_key if api_key is not None else os.environ.get("OPENROUTER_API_KEY")
         if not self._api_key:
             raise ValueError("OPENROUTER_API_KEY is not configured")
         self.timeout_seconds = timeout_seconds
+        self.allowed_model_ids = allowed_model_ids
 
     def complete(self, model_id: str, payload: dict) -> ProviderReply:
-        if model_id != MODEL_ID:
-            raise ValueError("Issue #13 permits only its frozen model")
+        if model_id not in self.allowed_model_ids:
+            raise ValueError("model is not in this Stage A transport's allowlist")
         body = {
             "model": model_id,
             "messages": [{"role": "system", "content": SUFFICIENCY_PROMPT},
@@ -117,9 +218,12 @@ class SufficiencyClient:
                                  round((time.monotonic() - started) * 1000), "transport_error")
         try:
             if not response.ok:
-                return ProviderReply(model_id, None, None, None,
-                                     round((time.monotonic() - started) * 1000),
-                                     f"http_{response.status_code}")
+                error = parse_provider_error(response.status_code,
+                                             _read_error_body(response), payload)
+                return StageAReply(model_id, None, None, None,
+                                   round((time.monotonic() - started) * 1000),
+                                   f"http_{response.status_code}", None, error,
+                                   error.provider_name)
             chunks = []
             size = 0
             for chunk in response.iter_content(chunk_size=8192):
@@ -147,8 +251,11 @@ class SufficiencyClient:
             cost = usage.get("cost")
             if type(cost) not in (int, float) or not math.isfinite(cost) or cost < 0:
                 cost = None
-            return ProviderReply(model_id, candidate, input_tokens, output_tokens,
-                                 elapsed, None, cost)
+            provider = document.get("provider")
+            if not (isinstance(provider, str) and _SAFE_PROVIDER.fullmatch(provider)):
+                provider = None
+            return StageAReply(model_id, candidate, input_tokens, output_tokens,
+                               elapsed, None, cost, None, provider)
         except requests.RequestException:
             return ProviderReply(model_id, None, None, None,
                                  round((time.monotonic() - started) * 1000), "transport_error")
@@ -175,6 +282,8 @@ class SufficiencyOutcome:
     output_tokens: int | None
     latency_ms: int
     cost_usd: float | None
+    provider_error: ProviderError | None = None
+    provider_name: str | None = None
 
 
 def assess_sufficiency(thread: Thread, owner: str, model_id: str,
@@ -204,7 +313,8 @@ def assess_sufficiency(thread: Thread, owner: str, model_id: str,
 def continue_after_sufficiency(thread: Thread, owner: str, model_id: str,
                                stage_a: SufficiencyOutcome, client) -> DualViewOutcome | None:
     """Return None unless this exact thread passed Stage A; never persist."""
-    if not stage_a.accepted or stage_a.state != "SUFFICIENT" or stage_a.model_id != model_id:
+    if (model_id != MODEL_ID or not stage_a.accepted or stage_a.state != "SUFFICIENT"
+            or stage_a.model_id != model_id):
         return None
     envelope = prepare_model_input(thread, owner)
     if envelope is None or envelope.suspicious_signals:
