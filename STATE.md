@@ -1,10 +1,10 @@
 # Email Ops state
 
-Updated: 2026-09-25
+Updated: 2026-09-26
 
 ## Current baseline
 
-Personal project with Issue #1's deterministic Gmail baseline and Issue #3's untrusted-content boundary accepted. PR #8 merged at `2d2765f` as benchmark evidence and Issue #7 is closed. PR #10 merged at `4a60b34` as rejected mitigation evidence and Issue #9 is closed. Issue #11 is closed after private false-confidence analysis. PR #15 merged at `f4083a9` as rejected Issue #13 calibration evidence, and Issue #13 is closed. Issue #16's Stage A only cheap-model comparison completed after a provider-control diagnosis; all three benchmarked models are **REJECT**. This file is the sole repository implementation baseline; the Personal board owns workflow fields. The project is not production-ready.
+Personal project with Issue #1's deterministic Gmail baseline and Issue #3's untrusted-content boundary accepted. PR #8 merged at `2d2765f` as benchmark evidence and Issue #7 is closed. PR #10 merged at `4a60b34` as rejected mitigation evidence and Issue #9 is closed. Issue #11 is closed after private false-confidence analysis. PR #15 merged at `f4083a9` as rejected Issue #13 calibration evidence, and Issue #13 is closed. PR #17 merged at `16c176b` as rejected Issue #16 Stage A evidence; all three benchmarked models are **REJECT**, and Issue #16 is closed. Issue #18 governs the next deterministic phase. This file is the sole repository implementation baseline; the Personal board owns workflow fields. The project is not production-ready.
 
 ## Completed
 
@@ -39,7 +39,7 @@ Personal project with Issue #1's deterministic Gmail baseline and Issue #3's unt
 
 ## Next safe action
 
-Merge PR #17 as REJECT evidence and close Issue #16. Then return to the product goal without an LLM: Gmail → deterministic extraction/rules → operational state → human review only where needed. Open a new approved issue for that phase before implementation; do not open another model experiment.
+Begin Issue #18: privately label a held-out sample of at most 50 threads from one bounded read-only query, record its label SHA-256, and freeze the `rules-v0.1` baseline metrics before any rule change. No LLM or model calls; do not open another model experiment.
 
 ## Evidence
 
@@ -57,6 +57,7 @@ Merge PR #17 as REJECT evidence and close Issue #16. Then return to the product 
 - https://github.com/snicolello/email_ops/issues/13
 - https://github.com/snicolello/email_ops/pull/15
 - https://github.com/snicolello/email_ops/issues/16
+- https://github.com/snicolello/email_ops/issues/18
 - https://github.com/snicolello/email_ops/pull/17
 - https://github.com/snicolello/stephen-project-hub/issues/50
 
