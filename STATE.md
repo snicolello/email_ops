@@ -35,11 +35,11 @@ Personal project with Issue #1's deterministic Gmail baseline and Issue #3's unt
 
 ## Blocked
 
-- Model promotion remains blocked: earlier configurations were false-confident or over-abstained, and no Issue #16 model passed Stage A. Stop LLM semantic escalation for now.
+- Model promotion remains blocked: earlier configurations were false-confident or over-abstained, and no Issue #16 model passed Stage A. Stop LLM semantic escalation for now; the next phase is deterministic.
 
 ## Next safe action
 
-Review and merge PR #17 as REJECT evidence and close Issue #16. Keep deterministic routing authoritative; do not open another model experiment without a new approved issue.
+Merge PR #17 as REJECT evidence and close Issue #16. Then return to the product goal without an LLM: Gmail → deterministic extraction/rules → operational state → human review only where needed. Open a new approved issue for that phase before implementation; do not open another model experiment.
 
 ## Evidence
 
