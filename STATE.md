@@ -39,7 +39,7 @@ Personal project with Issue #1's deterministic Gmail baseline and Issue #3's unt
 
 ## Next safe action
 
-Continue Issue #18. The `issue-18-deterministic-rules` branch adds the held-out tooling (`email_ops.heldout`), a review queue (`email_ops.review`), deterministic extraction, a named-rule `rules-v0.2` that leaves `rules-v0.1` unchanged, and counterparty-reply waiting resolution. All of it is synthetic-tested only. First run `heldout sample`, `label`, and `freeze` locally to record the label SHA-256 and `rules-v0.1` baseline. Then check every `rules-v0.2` residue rule against the earlier private corpora with `heldout dev-score`, and evaluate the held-out sample once. No LLM or model calls; do not open another model experiment.
+Direction changed on 2026-09-30 toward tiered triage of incoming mail; see the new tiered-triage issue. Stephen approved a headers-only analysis of up to 1,000 recent messages. Run `python -m email_ops.sender_analysis --limit 1000` locally, then label the private cluster sheet by category and disposition. The Issue #18 branch (`issue-18-deterministic-rules`) supplies named rules, extraction, waiting resolution, and the review queue; its one-time held-out gate is expected to be re-scoped by the new issue. Gmail stays read-only until the archive/label capability is implemented and approved.
 
 ## Evidence
 

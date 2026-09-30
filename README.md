@@ -23,6 +23,8 @@ Held-out workflow (all files must be under `~/.email_ops`; only aggregates are p
 4. Develop rules only with `python -m email_ops.heldout dev-score --corpus ~/.email_ops/<earlier corpus>.json`, which refuses the held-out sample.
 5. `python -m email_ops.heldout evaluate --sample ~/.email_ops/issue18/heldout.json --rules rules-v0.2` runs once, applies the six prespecified gates, and reports ACCEPT or REJECT.
 
+Sender analysis (headers only, approved up to 1,000 recent messages): `python -m email_ops.sender_analysis --limit 1000` fetches Gmail metadata (never bodies), groups mail by mailing list or sender, and writes a private JSON report and a labeling sheet (`~/.email_ops/analysis/senders-*.csv`). Fill `category` and `disposition` per cluster; labeled clusters become candidate sender rules. Only aggregates are printed.
+
 Review queue (local only): `python -m email_ops.review --db data/email_ops.db` lists `NEEDS_JUDGMENT` threads with reason code, subject, and Gmail link.
 
 Run tests with `python -m pytest tests -q`.
