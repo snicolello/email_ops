@@ -8,6 +8,10 @@ from pathlib import Path
 from .core import Message, Thread
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+# Deterministic routing signals kept in memory only. List headers are reduced to
+# presence so unsubscribe URLs and tokens are never carried forward.
+ROUTING_HEADERS = ("cc", "auto-submitted", "precedence", "x-autoreply")
+PRESENCE_HEADERS = ("list-unsubscribe", "list-id")
 
 
 def _part_text(part: dict, mime_type: str) -> str:
@@ -61,10 +65,12 @@ def normalize(raw: dict) -> Thread:
     for item in sorted(raw.get("messages", []), key=lambda x: int(x.get("internalDate", 0))):
         payload = item.get("payload", {})
         headers = {h["name"].lower(): h.get("value", "") for h in payload.get("headers", [])}
+        routing = tuple((name, headers[name]) for name in ROUTING_HEADERS if headers.get(name))
+        routing += tuple((name, "present") for name in PRESENCE_HEADERS if headers.get(name))
         messages.append(Message(str(item["id"]), headers.get("from", ""),
                                 headers.get("to", ""), headers.get("subject", ""),
                                 _body(payload), item.get("internalDate", ""),
-                                tuple(item.get("labelIds", []))))
+                                tuple(item.get("labelIds", [])), routing))
     return Thread("gmail", str(raw["id"]), tuple(messages))
 
 

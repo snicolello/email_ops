@@ -1,6 +1,6 @@
 # Email Ops state
 
-Updated: 2026-09-26
+Updated: 2026-09-30
 
 ## Current baseline
 
@@ -39,7 +39,7 @@ Personal project with Issue #1's deterministic Gmail baseline and Issue #3's unt
 
 ## Next safe action
 
-Begin Issue #18: privately label a held-out sample of at most 50 threads from one bounded read-only query, record its label SHA-256, and freeze the `rules-v0.1` baseline metrics before any rule change. No LLM or model calls; do not open another model experiment.
+Continue Issue #18. The `issue-18-deterministic-rules` branch adds the held-out tooling (`email_ops.heldout`), a review queue (`email_ops.review`), deterministic extraction, a named-rule `rules-v0.2` that leaves `rules-v0.1` unchanged, and counterparty-reply waiting resolution. All of it is synthetic-tested only. First run `heldout sample`, `label`, and `freeze` locally to record the label SHA-256 and `rules-v0.1` baseline. Then check every `rules-v0.2` residue rule against the earlier private corpora with `heldout dev-score`, and evaluate the held-out sample once. No LLM or model calls; do not open another model experiment.
 
 ## Evidence
 
