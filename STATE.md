@@ -39,7 +39,7 @@ Personal project with Issue #1's deterministic Gmail baseline and Issue #3's unt
 
 ## Next safe action
 
-Direction changed on 2026-09-30 toward tiered triage of incoming mail; see the new tiered-triage issue. Stephen approved a headers-only analysis of up to 1,000 recent messages. Run `python -m email_ops.sender_analysis --limit 1000` locally, then label the private cluster sheet by category and disposition. The Issue #18 branch (`issue-18-deterministic-rules`) supplies named rules, extraction, waiting resolution, and the review queue; its one-time held-out gate is expected to be re-scoped by the new issue. Gmail stays read-only until the archive/label capability is implemented and approved.
+Direction changed on 2026-09-30 toward tiered triage of incoming mail; see Issue #19. Stephen approved a headers-only analysis of up to 1,000 recent messages. Run `python -m email_ops.sender_analysis --limit 1000` locally, then label the private cluster sheet by category and disposition. The Issue #18 branch (`issue-18-deterministic-rules`) supplies named rules, extraction, waiting resolution, and the review queue; its one-time held-out gate is expected to be re-scoped by the new issue. Gmail stays read-only until the archive/label capability is implemented and approved.
 
 ## Evidence
 
@@ -59,5 +59,6 @@ Direction changed on 2026-09-30 toward tiered triage of incoming mail; see the n
 - https://github.com/snicolello/email_ops/issues/16
 - https://github.com/snicolello/email_ops/issues/18
 - https://github.com/snicolello/email_ops/pull/17
+- https://github.com/snicolello/email_ops/issues/19
 - https://github.com/snicolello/stephen-project-hub/issues/50
 
