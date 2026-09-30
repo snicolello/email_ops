@@ -117,7 +117,8 @@ def fetch_metadata(api, query: str, limit: int, *, progress: bool = False,
         headers = {h["name"].lower(): h.get("value", "")
                    for h in item.get("payload", {}).get("headers", [])}
         rows.append({"id": item["id"], "thread_id": item.get("threadId", ""),
-                     "labels": item.get("labelIds", []), "headers": headers})
+                     "labels": item.get("labelIds", []), "headers": headers,
+                     "internal_date": int(item.get("internalDate", 0))})
     return rows
 
 
