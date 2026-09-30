@@ -1,0 +1,7 @@
+cluster,category,disposition,surface_when,notes
+sender:deals@shop.example.com,Marketing,ARCHIVE,,Bulk promotions; never opened
+list:weekly.news.example.org,Newsletters,ARCHIVE,,Read-later newsletter
+sender:jobalerts-noreply@jobs.example.net,Career,DIGEST,,Opened often; keep visible in the daily digest
+sender:receipts@pay.example.com,Receipts,ARCHIVE,dispute|claim|limited|unusual|declin|fail,Routine payment receipts
+sender:alerts@bank.example.com,Financial,MIXED,fraud|unusual|suspicious|declin,Balance notices vs. fraud alerts need per-email judgment
+sender:messages-noreply@social.example.com,Career,MIXED,,Real people's messages may matter

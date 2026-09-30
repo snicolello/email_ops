@@ -1,10 +1,10 @@
 # Email Ops state
 
-Updated: 2026-09-26
+Updated: 2026-09-30
 
 ## Current baseline
 
-Personal project with Issue #1's deterministic Gmail baseline and Issue #3's untrusted-content boundary accepted. PR #8 merged at `2d2765f` as benchmark evidence and Issue #7 is closed. PR #10 merged at `4a60b34` as rejected mitigation evidence and Issue #9 is closed. Issue #11 is closed after private false-confidence analysis. PR #15 merged at `f4083a9` as rejected Issue #13 calibration evidence, and Issue #13 is closed. PR #17 merged at `16c176b` as rejected Issue #16 Stage A evidence; all three benchmarked models are **REJECT**, and Issue #16 is closed. Issue #18 governs the next deterministic phase. This file is the sole repository implementation baseline; the Personal board owns workflow fields. The project is not production-ready.
+Personal project with Issue #1's deterministic Gmail baseline and Issue #3's untrusted-content boundary accepted. PR #8 merged at `2d2765f` as benchmark evidence and Issue #7 is closed. PR #10 merged at `4a60b34` as rejected mitigation evidence and Issue #9 is closed. Issue #11 is closed after private false-confidence analysis. PR #15 merged at `f4083a9` as rejected Issue #13 calibration evidence, and Issue #13 is closed. PR #17 merged at `16c176b` as rejected Issue #16 Stage A evidence; all three benchmarked models are **REJECT**, and Issue #16 is closed. Issue #18's named rules, extraction, waiting resolution, and review queue carry into Issue #19, which governs tiered triage of incoming mail. On 2026-09-30 Stephen replaced #18's one-time 50-thread held-out gate with #19's per-category shadow promotion gate. This file is the sole repository implementation baseline; the Personal board owns workflow fields. The project is not production-ready.
 
 ## Completed
 
@@ -20,6 +20,9 @@ Personal project with Issue #1's deterministic Gmail baseline and Issue #3's unt
 - Issue #16 selected `openai/gpt-6-luna-pro`, `qwen/qwen3-30b-a3b-instruct-2507`, and `google/gemini-3.1-flash-lite` for a common-contract Stage A comparison. The exact frozen 11-case corpus and read-only Gmail scope were reverified. Each model had a listed ZDR endpoint supporting structured output. The first request to Luna Pro with required privacy controls returned HTTP 404; the global stop fired after one call, zero case results, and $0 reported cost. No Stage A gate was evaluated and no candidate qualified. The added Stage A only benchmark path and aggregate evaluator passed 63 synthetic tests with clean exit. No Stage B call or authoritative persistence occurred.
 - Issue #16 diagnosis: the Stage A transport now retains only HTTP status, provider error code, a redacted message capped at 160 characters, and provider name, reading at most 4 KB of error body. A non-private synthetic probe through the exact transport showed the original 404 was OpenRouter's "no endpoints can handle the requested parameters": no Luna Pro endpoint supports `temperature`, and its ZDR endpoints also lack `max_tokens`. Luna Pro is REJECT_REQUIRED_CONTROLS_UNAVAILABLE and was replaced before the benchmark by `mistralai/mistral-small-3.2-24b-instruct` ($0.09375 / $0.25 per 1M tokens), which passed the same probe with Qwen and Gemini. The frozen prompt, schema, temperature 0, 256 max tokens, and privacy controls were unchanged.
 - Issue #16 results (hashes reverified; 33 attempts per model; all schema-valid): Mistral Small 3.2 caught 3/9 known-insufficient attempts, 0/9 exact subtypes, 2/8 sufficient cases all three runs, 1 inconsistent case. Qwen3 30B caught 6/9, 0/9 subtypes, 1/8 sufficient, 3 inconsistent cases. Gemini 3.1 Flash Lite caught 9/9, 3/9 subtypes, 1/8 sufficient, 0 inconsistent, reproducing its Issue #13 over-abstention. Every model is **REJECT**; no STAGE_A_CANDIDATE exists. Diagnostics and benchmark used 104 calls and $0.02338889 reported cost. The 94-test suite exits cleanly. No Stage B call, Gmail mutation, or authoritative persistence occurred.
+- The approved headers-only sender analysis completed on 2026-09-30 after a per-minute Gmail quota error prompted bounded request pacing and retry. It fetched metadata for 500 sent and 1,000 recent inbound messages, yielding 188 private sender/list clusters. The top 10, 25, and 50 clusters cover 38.8%, 59.3%, and 75.0% of inbound messages. The private labeling sheet remains under `~/.email_ops/analysis`; no sender names, subjects, or message IDs are committed. The updated 146-test suite exits cleanly, and Gmail remains `gmail.readonly`.
+- Issue #19 M1 labeling (2026-09-30): Stephen confirmed labels for the top 40 clusters (69.9% of inbound): 30 ARCHIVE, 4 DIGEST, 6 MIXED, with per-sender surface patterns for money and security notices. Newsletters was added to the topic list. `email_ops.sender_policy` loads the private policy table (`~/.email_ops/policy`), routes Tier 2 surface checks before Tier 1 filing, and measures tier shares; Git holds only the engine and a synthetic example. The measured cluster-level split of the 1,000 inbound messages is 48.8% ARCHIVE, 13.2% DIGEST (62.0% filed by Tier 1), 2.4% surfaced, and 35.6% middle. Hint-only role/bulk address signals cut the `person` hint from 176 to 23 messages; `extract.is_automated` is unchanged. The low correspondent match (1 message) reflects zero freemail senders in the inbound sample, not an address-matching defect. The 172-test suite exits cleanly. No Gmail call was made.
+- Issue #19 M2 started (2026-09-30): `email_ops.shadow` records read-only Tier 1-2 shadow decisions for new inbound mail in a private SQLite database, prints a Markdown digest that Stephen reads inline in the agent session, records corrections, and reports per-category promotion progress. The first run read metadata for 44 inbound messages from the last day (plus 500 sent headers to seed correspondents): 18 would archive, 8 would digest, 2 surfaced, and 16 middle. Scope remains exactly `gmail.readonly`; no Gmail change was made. The 178-test suite exits cleanly. After Stephen's first digest review, a JD Delivery category was added for job alerts (the cross-project handoff itself is not built), 15 more private policy rows were labeled, and 17 corrections were recorded; the historical Tier 1 share is now 68.5% (52.5% ARCHIVE, 16.0% DIGEST).
 
 ## Pending
 
@@ -35,11 +38,11 @@ Personal project with Issue #1's deterministic Gmail baseline and Issue #3's unt
 
 ## Blocked
 
-- Model promotion remains blocked: earlier configurations were false-confident or over-abstained, and no Issue #16 model passed Stage A. Stop LLM semantic escalation for now; the next phase is deterministic.
+- Model promotion remains blocked: earlier configurations were false-confident or over-abstained, and no Issue #16 model passed Stage A. Issue #19 restarts model work local-first at M4, in shadow; no model calls are made before M4 starts.
 
 ## Next safe action
 
-Begin Issue #18: privately label a held-out sample of at most 50 threads from one bounded read-only query, record its label SHA-256, and freeze the `rules-v0.1` baseline metrics before any rule change. No LLM or model calls; do not open another model experiment.
+Issue #19 M2 shadow is running on demand: each session runs `python -m email_ops.shadow run` and `digest`, and Stephen marks mistakes with `correct`. Label recurring unlabeled senders from the digest's middle section into the private policy. A local scheduled task runs the shadow pass and shows the digest daily at about noon ET while the Claude app is open. M3 (label + archive executor behind `gmail.modify`, dry-run by default) may be built during the shadow period, but no category goes live before it meets the promotion gate and Stephen approves it. After the Issue #18 branch merges, later milestones start on fresh branches from `main`. Gmail stays read-only until the archive/label capability is implemented and approved.
 
 ## Evidence
 
@@ -59,5 +62,6 @@ Begin Issue #18: privately label a held-out sample of at most 50 threads from on
 - https://github.com/snicolello/email_ops/issues/16
 - https://github.com/snicolello/email_ops/issues/18
 - https://github.com/snicolello/email_ops/pull/17
+- https://github.com/snicolello/email_ops/issues/19
 - https://github.com/snicolello/stephen-project-hub/issues/50
 

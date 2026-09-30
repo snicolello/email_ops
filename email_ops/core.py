@@ -20,6 +20,8 @@ class Message:
     body: str
     timestamp: str
     labels: tuple[str, ...] = ()
+    # Allowlisted routing headers only (see gmail.ROUTING_HEADERS); never written to the database.
+    headers: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -36,6 +38,11 @@ class Decision:
     confidence: float
     description: str | None = None
     event_type: str | None = None
+    # Set by named-rule rulesets (rules-v0.2+); legacy decisions leave them None.
+    rule: str | None = None
+    reason_code: str | None = None
+    fields: tuple[tuple[str, str], ...] = ()
+    resolves_waiting: bool = False
 
 
 def decide(thread: Thread, owner: str) -> Decision:
@@ -91,12 +98,21 @@ CREATE TABLE IF NOT EXISTS decisions (
 """
 
 
+_ADDED_COLUMNS = (("decisions", "rule"), ("decisions", "reason_code"),
+                  ("records", "fields"), ("records", "resolved_by_message_id"))
+
+
 def connect(path: str | Path) -> sqlite3.Connection:
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    if str(path) != ":memory:":
+        path.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(path)
     db.execute("PRAGMA foreign_keys=ON")
     db.executescript(SCHEMA)
+    with db:  # additive, nullable columns so existing private databases keep working
+        for table, column in _ADDED_COLUMNS:
+            if column not in {row[1] for row in db.execute(f"PRAGMA table_info({table})")}:
+                db.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
     return db
 
 
@@ -109,8 +125,10 @@ def _persist_decision(db: sqlite3.Connection, thread: Thread, owner: str,
     last = thread.messages[-1]
     now = datetime.now(timezone.utc).isoformat()
     thread_id = identity("thread", thread)
+    record_id = identity("record", thread)
+    named = decision.rule is not None
     open_waiting = db.execute("SELECT 1 FROM records WHERE id=? AND kind='waiting' AND status='open'",
-                              (identity("record", thread),)).fetchone()
+                              (record_id,)).fetchone()
     with db:
         db.execute("""INSERT INTO threads VALUES (?,?,?,?,?,?,?)
             ON CONFLICT(id) DO UPDATE SET subject=excluded.subject, route=excluded.route,
@@ -118,23 +136,35 @@ def _persist_decision(db: sqlite3.Connection, thread: Thread, owner: str,
             (thread_id, thread.provider, thread.id, last.subject, decision.route, now, last.id))
         kind = {"STEPHEN_ACTION": "action", "WAITING_ON_OTHER": "waiting",
                 "OPERATIONAL_EVIDENCE": "event"}.get(decision.route)
+        if named and open_waiting and decision.resolves_waiting:
+            db.execute("""UPDATE records SET status='resolved', resolved_by_message_id=?,
+                updated_at=? WHERE id=? AND kind='waiting'""", (last.id, now, record_id))
         if kind:
-            record_id = identity("record", thread)
-            db.execute("""INSERT INTO records VALUES (?,?,?,?,?,?,?,?,?)
+            fields = json.dumps(dict(decision.fields), sort_keys=True) if decision.fields else None
+            db.execute("""INSERT INTO records (id, thread_id, kind, description, status, event_type,
+                source_message_id, confidence, updated_at, fields, resolved_by_message_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,NULL)
                 ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, description=excluded.description,
                 status=excluded.status, event_type=excluded.event_type,
                 source_message_id=excluded.source_message_id, confidence=excluded.confidence,
-                updated_at=excluded.updated_at""",
+                updated_at=excluded.updated_at, fields=excluded.fields,
+                resolved_by_message_id=NULL""",
                 (record_id, thread_id, kind, decision.description or last.subject,
-                 "open", decision.event_type, last.id, decision.confidence, now))
-        elif open_waiting and owner not in last.sender.lower() and re.search(
+                 "open", decision.event_type, last.id, decision.confidence, now, fields))
+        elif not named and open_waiting and owner not in last.sender.lower() and re.search(
                 r"\b(attached|sent the requested|completed the requested)\b", last.body.lower()):
             db.execute("UPDATE records SET status='resolved', updated_at=? WHERE id=? AND kind='waiting'",
-                       (now, identity("record", thread)))
-        decision_id = hashlib.sha256(f"{thread_id}:{last.id}:{decision.route}".encode()).hexdigest()[:24]
-        db.execute("""INSERT OR IGNORE INTO decisions VALUES (?,?,?,?,?,?,?,?,?)""",
+                       (now, record_id))
+        # Legacy ids are unchanged; named-rule decisions are also keyed by ruleset so a
+        # later ruleset's audit row is not swallowed by an earlier identical route.
+        key = f"{thread_id}:{last.id}:{decision.route}" + (f":{model_name}" if named else "")
+        decision_id = hashlib.sha256(key.encode()).hexdigest()[:24]
+        db.execute("""INSERT OR IGNORE INTO decisions (id, thread_id, source_message_id, route,
+            reason, confidence, model_provider, model_name, created_at, rule, reason_code)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                    (decision_id, thread_id, last.id, decision.route, decision.reason,
-                    decision.confidence, model_provider, model_name, now))
+                    decision.confidence, model_provider, model_name, now,
+                    decision.rule, decision.reason_code))
     return decision
 
 

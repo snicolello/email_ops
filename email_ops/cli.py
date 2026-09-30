@@ -2,8 +2,9 @@
 
 import argparse
 import json
-from .core import connect, reconcile, summary
+from .core import connect, summary
 from .gmail import fetch_threads, service
+from .rules import RULES_V0_1, RULESETS, reconcile_with
 
 
 def main():
@@ -13,6 +14,8 @@ def main():
     parser.add_argument("--db", default="data/email_ops.db")
     parser.add_argument("--query", default="in:inbox newer_than:30d")
     parser.add_argument("--limit", type=int, default=12)
+    # rules-v0.1 stays the default until Issue #18's held-out evaluation accepts a successor.
+    parser.add_argument("--rules", default=RULES_V0_1, choices=sorted(RULESETS))
     args = parser.parse_args()
     if not 1 <= args.limit <= 50:
         parser.error("--limit must be 1..50")
@@ -22,8 +25,8 @@ def main():
     db = connect(args.db)
     try:
         for thread in threads:
-            reconcile(db, thread, owner)
-        print(json.dumps({"sample_threads": len(threads), **summary(db)}, indent=2))
+            reconcile_with(db, thread, owner, args.rules)
+        print(json.dumps({"rules": args.rules, "sample_threads": len(threads), **summary(db)}, indent=2))
     finally:
         db.close()
 

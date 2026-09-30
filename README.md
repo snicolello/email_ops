@@ -11,5 +11,25 @@ Only `https://www.googleapis.com/auth/gmail.readonly` is requested. Raw message 
 
 The deterministic router is deliberately conservative. It can miss actions and sends uncertain items to `NEEDS_JUDGMENT`; it is not a production triage policy. Due dates are not inferred. The canonical thread and normalized event structures are independent of Gmail; a future JD Delivery consumer can take job events without reparsing Gmail. That integration is not implemented.
 
+## Issue #18 deterministic rules
+
+`rules-v0.1` (`core.decide`) is the frozen baseline and stays the CLI default. `rules-v0.2` (`email_ops/rules.py`) keeps every v0.1 route, names each rule with a reason code, and applies new rules only to the v0.1 `NEEDS_JUDGMENT` residue. Unmatched threads stay `NEEDS_JUDGMENT`. Select it with `--rules rules-v0.2`. Extracted fields (sender class, amounts, order/reference/job/application identifiers) are short values stored on records; raw bodies are not persisted. A reply from the addressee of an owner request resolves the waiting record and records the resolving message; auto-replies and third parties do not.
+
+Held-out workflow (all files must be under `~/.email_ops`; only aggregates are printed):
+
+1. `python -m email_ops.heldout sample --query '<one bounded query>' --limit 50 --out ~/.email_ops/issue18/heldout.json`
+2. `python -m email_ops.heldout label --sample ~/.email_ops/issue18/heldout.json` (blind to rule output)
+3. `python -m email_ops.heldout freeze --sample ~/.email_ops/issue18/heldout.json` records the label SHA-256 and the `rules-v0.1` baseline once.
+4. Develop rules only with `python -m email_ops.heldout dev-score --corpus ~/.email_ops/<earlier corpus>.json`, which refuses the held-out sample.
+5. `python -m email_ops.heldout evaluate --sample ~/.email_ops/issue18/heldout.json --rules rules-v0.2` runs once, applies the six prespecified gates, and reports ACCEPT or REJECT.
+
+Sender analysis (headers only, approved up to 1,000 recent messages): `python -m email_ops.sender_analysis --limit 1000` fetches Gmail metadata (never bodies), groups mail by mailing list or sender, and writes a private JSON report and a labeling sheet (`~/.email_ops/analysis/senders-*.csv`). Fill `category` and `disposition` per cluster; labeled clusters become candidate sender rules. Only aggregates are printed.
+
+Sender policy (Issue #19 Tiers 1-2, advisory only): `python -m email_ops.sender_policy build --sheet ~/.email_ops/analysis/<labeled sheet>.csv` merges labeled rows into the private table `~/.email_ops/policy/sender-policy.csv`; `python -m email_ops.sender_policy measure --analysis ~/.email_ops/analysis/senders-<stamp>.json` prints tier shares. Columns are `cluster`, `category`, `disposition` (ARCHIVE, DIGEST, INBOX, MIXED), an optional `surface_when` subject regex, and `notes`; see the synthetic [`examples/sender-policy.example.csv`](examples/sender-policy.example.csv). Security, account-access, and money-trouble subjects, `surface_when` matches, and correspondents are surfaced before any filing rule applies. The real table names personal senders and stays out of Git.
+
+Shadow triage (Issue #19 M2, Gmail read-only): `python -m email_ops.shadow run` reads header metadata for inbound mail since the last run (first run: the last day; at most 500 per run), routes it through the private sender policy, and records what would happen in `~/.email_ops/shadow/shadow.db`. `python -m email_ops.shadow digest` prints a Markdown digest of new decisions (surfaced, middle, would-digest, would-archive), `correct <#> --disposition <D> [--category <C>]` records a correction, and `status` shows each category's progress toward the promotion gate (at least 14 days and 50 reviewed filings in shadow, zero wrong in the last 50, then Stephen's approval).
+
+Review queue (local only): `python -m email_ops.review --db data/email_ops.db` lists `NEEDS_JUDGMENT` threads with reason code, subject, and Gmail link.
+
 Run tests with `python -m pytest tests -q`.
 

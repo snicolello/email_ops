@@ -1,0 +1,166 @@
+"""Headers-only sender analysis: metadata format, clustering, labeling sheet."""
+
+import csv
+from collections import Counter
+import json
+
+import httplib2
+
+import pytest
+from googleapiclient.errors import HttpError
+
+import email_ops.sender_analysis as sender_analysis
+from email_ops.sender_analysis import (analyze, cluster_key, correspondents, fetch_metadata,
+                                       write_sheet)
+
+
+OWNER = "stephen@example.com"
+
+
+def row(id, sender, *, subject="s", labels=("UNREAD",), thread=None, **headers):
+    h = {"from": sender, "to": OWNER, "subject": subject}
+    h.update({k.replace("_", "-"): v for k, v in headers.items()})
+    return {"id": id, "thread_id": thread or id, "labels": list(labels), "headers": h}
+
+
+class FakeMessages:
+    def __init__(self, total):
+        self.total, self.calls = total, []
+
+    def list(self, **kw):
+        self.calls.append(("list", kw))
+        start = int(kw.get("pageToken", 0))
+        page = list(range(start, min(start + kw["maxResults"], self.total)))
+        response = {"messages": [{"id": f"m{i}"} for i in page]}
+        if page and page[-1] + 1 < self.total:
+            response["nextPageToken"] = str(page[-1] + 1)
+        self._next = response
+        return self
+
+    def get(self, **kw):
+        self.calls.append(("get", kw))
+        self._next = {"id": kw["id"], "threadId": "t", "labelIds": ["UNREAD"],
+                      "payload": {"headers": [{"name": "From", "value": "a@x.com"}]}}
+        return self
+
+    def execute(self):
+        return self._next
+
+
+class FakeApi:
+    def __init__(self, total):
+        self.endpoint = FakeMessages(total)
+
+    def users(self):
+        return self
+
+    def messages(self):
+        return self.endpoint
+
+
+def test_fetch_is_metadata_only_bounded_and_paginated():
+    api = FakeApi(1200)
+    rows = fetch_metadata(api, "in:inbox", 700)
+    assert len(rows) == 700
+    gets = [kw for kind, kw in api.endpoint.calls if kind == "get"]
+    assert {kw["format"] for kw in gets} == {"metadata"}
+    assert [kw["maxResults"] for kind, kw in api.endpoint.calls if kind == "list"] == [500, 200]
+    with pytest.raises(ValueError):
+        fetch_metadata(api, "in:inbox", 1001)
+
+
+def test_quota_pacer_spaces_calls(monkeypatch):
+    now = [100.0]
+    delays = []
+    monkeypatch.setattr(sender_analysis.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(sender_analysis.time, "sleep",
+                        lambda seconds: (delays.append(seconds), now.__setitem__(0, now[0] + seconds)))
+    pacer = sender_analysis._QuotaPacer(0.3)
+    pacer.wait()
+    pacer.wait()
+    assert delays == [pytest.approx(0.3)]
+
+
+def test_quota_error_is_retried_but_other_403_is_not(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(sender_analysis.time, "sleep", sleeps.append)
+    monkeypatch.setattr(sender_analysis.random, "uniform", lambda _a, _b: 0)
+
+    class Request:
+        def __init__(self, reason):
+            self.reason, self.calls = reason, 0
+
+        def execute(self):
+            self.calls += 1
+            if self.calls == 1:
+                body = json.dumps({"error": {"errors": [{"reason": self.reason}]}}).encode()
+                raise HttpError(httplib2.Response({"status": 403}), body)
+            return {"id": "m1"}
+
+    quota = Request("rateLimitExceeded")
+    assert sender_analysis._execute_metadata(quota, None) == {"id": "m1"}
+    assert quota.calls == 2 and sleeps == [1]
+    other = Request("forbidden")
+    with pytest.raises(HttpError):
+        sender_analysis._execute_metadata(other, None)
+    assert other.calls == 1
+
+
+def test_cluster_key_prefers_list_id_then_sender():
+    assert cluster_key(row("1", "News <news@a.com>", list_id="Weekly <weekly.a.com>")) == "list:weekly.a.com"
+    assert cluster_key(row("2", "Jane <Jane@B.com>")) == "sender:jane@b.com"
+
+
+def test_analysis_groups_ranks_and_hints():
+    rows = [row(str(i), "Deals <no-reply@shop.com>", list_unsubscribe="<x>",
+                labels=("UNREAD", "CATEGORY_PROMOTIONS")) for i in range(6)]
+    rows += [row("f1", "Friend <friend@example.org>", labels=()),
+             row("f2", "Friend <friend@example.org>", labels=("UNREAD",))]
+    rows += [row("o1", f"Stephen <{OWNER}>")]  # owner's own messages are excluded
+    report = analyze(rows, OWNER, correspondents(
+        [row("s1", OWNER, to="friend@example.org")], OWNER))
+    first, second = report["clusters"]
+    assert (first["cluster"], first["messages"], first["hint"]) == (
+        "sender:no-reply@shop.com", 6, "archive_candidate")
+    assert first["gmail_categories"] == {"CATEGORY_PROMOTIONS": 6}
+    assert (second["hint"], second["owner_wrote_to_sender"], second["unread_rate"]) == (
+        "correspondent", 1, 0.5)
+    assert report["inbound_messages"] == 8
+    assert second["cumulative_share"] == 1.0
+    assert report["summary"]["messages_by_hint"] == {"archive_candidate": 6, "correspondent": 2}
+
+
+def test_labeling_sheet_has_blank_decision_columns(tmp_path):
+    report = analyze([row("1", "a@x.com", subject="Hello")], OWNER, Counter())
+    path = tmp_path / "sheet.csv"
+    write_sheet(path, report["clusters"])
+    [line] = list(csv.DictReader(path.open()))
+    assert (line["cluster"], line["sample_subjects"], line["category"], line["disposition"]) == (
+        "sender:a@x.com", "Hello", "", "")
+
+
+@pytest.mark.parametrize("sender", [
+    "no.reply.alerts@bank.example.com", "no_reply@email.example.com", "service@pay.example.com",
+    "daily@newsletter.example.com", "acmepay@acmepay.com", "brand@notification.example.com",
+    "invoice+statements@example.com", "shipment-tracking@example.com", "info.us@example.com"])
+def test_role_and_bulk_senders_look_automated(sender):
+    assert sender_analysis.looks_automated_sender(sender)
+
+
+@pytest.mark.parametrize("sender", ["Jane Doe <jane.doe@example.com>", "avi@startup.example.io",
+                                    "bishop@example.com", "steamer@example.com"])
+def test_personal_addresses_do_not_look_automated(sender):
+    assert not sender_analysis.looks_automated_sender(sender)
+
+
+def test_role_sender_without_list_headers_is_not_hinted_person():
+    report = analyze([row(str(i), "Bank <no.reply.alerts@bank.example.com>") for i in range(3)],
+                     OWNER, Counter())
+    assert report["clusters"][0]["hint"] == "archive_candidate"
+
+
+def test_rehint_updates_saved_cluster_without_gmail():
+    saved = {"cluster": "sender:service@pay.example.com", "messages": 4, "automated_rate": 0.0,
+             "unread_rate": 1.0, "owner_wrote_to_sender": 0}
+    assert sender_analysis.rehint(saved) == "archive_candidate"
+    assert sender_analysis.rehint({**saved, "cluster": "sender:jane@example.com"}) == "person"
