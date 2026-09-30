@@ -16,6 +16,7 @@ from email.utils import getaddresses
 import json
 from pathlib import Path
 import re
+import sys
 
 from .core import Message
 from .extract import address, is_automated
@@ -45,12 +46,15 @@ def _list_ids(api, query: str, limit: int) -> list[str]:
     return ids[:limit]
 
 
-def fetch_metadata(api, query: str, limit: int) -> list[dict]:
+def fetch_metadata(api, query: str, limit: int, *, progress: bool = False) -> list[dict]:
     """Return header/label metadata only; format=metadata never includes bodies."""
     if not 1 <= limit <= MAX_MESSAGES:
         raise ValueError(f"limit must be 1..{MAX_MESSAGES}")
     rows = []
-    for message_id in _list_ids(api, query, limit):
+    ids = _list_ids(api, query, limit)
+    for n, message_id in enumerate(ids, 1):
+        if progress and (n % 50 == 0 or n == len(ids)):
+            print(f"  {query}: {n}/{len(ids)} messages", file=sys.stderr, flush=True)
         item = api.users().messages().get(userId="me", id=message_id, format="metadata",
                                           metadataHeaders=METADATA_HEADERS).execute()
         headers = {h["name"].lower(): h.get("value", "")
@@ -195,8 +199,8 @@ def main(argv: list[str] | None = None) -> None:
         parser.error(f"--out-dir must be under the private {PRIVATE_ROOT} directory")
     api = service(args.credentials, args.token)
     owner = api.users().getProfile(userId="me").execute()["emailAddress"]
-    sent = fetch_metadata(api, "in:sent", args.sent_limit) if args.sent_limit else []
-    report = analyze(fetch_metadata(api, args.query, args.limit), owner,
+    sent = fetch_metadata(api, "in:sent", args.sent_limit, progress=True) if args.sent_limit else []
+    report = analyze(fetch_metadata(api, args.query, args.limit, progress=True), owner,
                      correspondents(sent, owner))
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     args.out_dir.mkdir(parents=True, exist_ok=True)
