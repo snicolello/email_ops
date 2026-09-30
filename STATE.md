@@ -4,7 +4,7 @@ Updated: 2026-09-30
 
 ## Current baseline
 
-Personal project with Issue #1's deterministic Gmail baseline and Issue #3's untrusted-content boundary accepted. PR #8 merged at `2d2765f` as benchmark evidence and Issue #7 is closed. PR #10 merged at `4a60b34` as rejected mitigation evidence and Issue #9 is closed. Issue #11 is closed after private false-confidence analysis. PR #15 merged at `f4083a9` as rejected Issue #13 calibration evidence, and Issue #13 is closed. PR #17 merged at `16c176b` as rejected Issue #16 Stage A evidence; all three benchmarked models are **REJECT**, and Issue #16 is closed. Issue #18 governs the next deterministic phase. This file is the sole repository implementation baseline; the Personal board owns workflow fields. The project is not production-ready.
+Personal project with Issue #1's deterministic Gmail baseline and Issue #3's untrusted-content boundary accepted. PR #8 merged at `2d2765f` as benchmark evidence and Issue #7 is closed. PR #10 merged at `4a60b34` as rejected mitigation evidence and Issue #9 is closed. Issue #11 is closed after private false-confidence analysis. PR #15 merged at `f4083a9` as rejected Issue #13 calibration evidence, and Issue #13 is closed. PR #17 merged at `16c176b` as rejected Issue #16 Stage A evidence; all three benchmarked models are **REJECT**, and Issue #16 is closed. Issue #18's named rules, extraction, waiting resolution, and review queue carry into Issue #19, which governs tiered triage of incoming mail. On 2026-09-30 Stephen replaced #18's one-time 50-thread held-out gate with #19's per-category shadow promotion gate. This file is the sole repository implementation baseline; the Personal board owns workflow fields. The project is not production-ready.
 
 ## Completed
 
@@ -38,11 +38,11 @@ Personal project with Issue #1's deterministic Gmail baseline and Issue #3's unt
 
 ## Blocked
 
-- Model promotion remains blocked: earlier configurations were false-confident or over-abstained, and no Issue #16 model passed Stage A. Stop LLM semantic escalation for now; the next phase is deterministic.
+- Model promotion remains blocked: earlier configurations were false-confident or over-abstained, and no Issue #16 model passed Stage A. Issue #19 restarts model work local-first at M4, in shadow; no model calls are made before M4 starts.
 
 ## Next safe action
 
-Issue #19 M2 shadow is running on demand: each session runs `python -m email_ops.shadow run` and `digest`, and Stephen marks mistakes with `correct`. Label recurring unlabeled senders from the digest's middle section into the private policy. Automatic daily scheduling is not set up. M3 (label + archive executor behind `gmail.modify`, dry-run by default) may be built during the shadow period, but no category goes live before it meets the promotion gate and Stephen approves it. The Issue #18 branch (`issue-18-deterministic-rules`) supplies named rules, extraction, waiting resolution, and the review queue; its one-time held-out gate is expected to be re-scoped by #19. Gmail stays read-only until the archive/label capability is implemented and approved.
+Issue #19 M2 shadow is running on demand: each session runs `python -m email_ops.shadow run` and `digest`, and Stephen marks mistakes with `correct`. Label recurring unlabeled senders from the digest's middle section into the private policy. A local scheduled task runs the shadow pass and shows the digest daily at about noon ET while the Claude app is open. M3 (label + archive executor behind `gmail.modify`, dry-run by default) may be built during the shadow period, but no category goes live before it meets the promotion gate and Stephen approves it. After the Issue #18 branch merges, later milestones start on fresh branches from `main`. Gmail stays read-only until the archive/label capability is implemented and approved.
 
 ## Evidence
 
