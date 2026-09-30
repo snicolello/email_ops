@@ -137,3 +137,30 @@ def test_labeling_sheet_has_blank_decision_columns(tmp_path):
     [line] = list(csv.DictReader(path.open()))
     assert (line["cluster"], line["sample_subjects"], line["category"], line["disposition"]) == (
         "sender:a@x.com", "Hello", "", "")
+
+
+@pytest.mark.parametrize("sender", [
+    "no.reply.alerts@bank.example.com", "no_reply@email.example.com", "service@pay.example.com",
+    "daily@newsletter.example.com", "acmepay@acmepay.com", "brand@notification.example.com",
+    "invoice+statements@example.com", "shipment-tracking@example.com", "info.us@example.com"])
+def test_role_and_bulk_senders_look_automated(sender):
+    assert sender_analysis.looks_automated_sender(sender)
+
+
+@pytest.mark.parametrize("sender", ["Jane Doe <jane.doe@example.com>", "avi@startup.example.io",
+                                    "bishop@example.com", "steamer@example.com"])
+def test_personal_addresses_do_not_look_automated(sender):
+    assert not sender_analysis.looks_automated_sender(sender)
+
+
+def test_role_sender_without_list_headers_is_not_hinted_person():
+    report = analyze([row(str(i), "Bank <no.reply.alerts@bank.example.com>") for i in range(3)],
+                     OWNER, Counter())
+    assert report["clusters"][0]["hint"] == "archive_candidate"
+
+
+def test_rehint_updates_saved_cluster_without_gmail():
+    saved = {"cluster": "sender:service@pay.example.com", "messages": 4, "automated_rate": 0.0,
+             "unread_rate": 1.0, "owner_wrote_to_sender": 0}
+    assert sender_analysis.rehint(saved) == "archive_candidate"
+    assert sender_analysis.rehint({**saved, "cluster": "sender:jane@example.com"}) == "person"

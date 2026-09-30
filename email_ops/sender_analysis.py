@@ -37,6 +37,16 @@ SAMPLE_SUBJECTS = 3
 _LIST_ID = re.compile(r"<([^>]+)>")
 _GET_INTERVAL_SECONDS = 0.3  # 20 quota units/get; leave room below 6,000 units/minute.
 _MAX_QUOTA_RETRIES = 7
+# Hint-only role/bulk address signals. extract.is_automated is left unchanged
+# because the deterministic rules depend on it.
+_ROLE_LOCAL = re.compile(r"no[._-]?reply|do[._-]?not[._-]?reply|alert|notif|servic|support|"
+                         r"newsletter|digest|careers?|billing|invoice|statement|confirm|receipt|"
+                         r"tracking|update|recommend|reward|marketing|promo")
+_ROLE_TOKENS = frozenset({"info", "hello", "team", "news", "daily", "shop", "store", "order",
+                          "orders", "message", "messages", "offers", "deals", "contact", "help"})
+_BULK_SUBDOMAINS = frozenset({"e", "em", "m", "email", "mail", "mailer", "mailing", "news",
+                              "newsletter", "notification", "notifications", "communication",
+                              "communications", "comms", "info", "alerts", "edm", "marketing"})
 
 
 class _QuotaPacer:
@@ -125,7 +135,20 @@ def _recipients(row: dict) -> set[str]:
     return {a.lower() for _, a in getaddresses([headers.get("to", ""), headers.get("cc", "")]) if a}
 
 
-def _message(row: dict) -> Message:
+def looks_automated_sender(sender: str) -> bool:
+    """Address-only role or bulk-sender signal, used for labeling hints and Tier 2."""
+    local, _, domain = address(sender).partition("@")
+    if not domain:
+        return False
+    labels = domain.split(".")
+    org = labels[-2] if len(labels) >= 2 else ""
+    return bool(_ROLE_LOCAL.search(local)
+                or set(re.split(r"[._+-]", local)) & _ROLE_TOKENS
+                or set(labels[:-2]) & _BULK_SUBDOMAINS
+                or (len(org) >= 4 and org in local))
+
+
+def metadata_message(row: dict) -> Message:
     h = row["headers"]
     routing = tuple((k, h[k]) for k in ("auto-submitted", "precedence") if h.get(k))
     routing += tuple((k, "present") for k in ("list-unsubscribe", "list-id") if h.get(k))
@@ -155,7 +178,8 @@ def analyze(rows: list[dict], owner: str, replied: Counter) -> dict:
         senders = Counter(address(m["headers"].get("from", "")) for m in members)
         categories = Counter(label for m in members for label in m["labels"]
                              if label in GMAIL_CATEGORIES)
-        automated = sum(is_automated(_message(m), owner) for m in members)
+        automated = sum(is_automated(metadata_message(m), owner)
+                        or looks_automated_sender(m["headers"].get("from", "")) for m in members)
         unread = sum("UNREAD" in m["labels"] for m in members)
         subjects = []
         for m in members:
@@ -199,6 +223,17 @@ def _hint(count: int, unread: int, automated: int, replied_to: int) -> str:
     return "person"
 
 
+def rehint(cluster: dict) -> str:
+    """Recompute a saved cluster's hint with the current address signals, without Gmail."""
+    count = cluster["messages"]
+    automated = round(cluster["automated_rate"] * count)
+    if cluster["cluster"].startswith("sender:") and looks_automated_sender(
+            cluster["cluster"].partition(":")[2]):
+        automated = count
+    return _hint(count, round(cluster["unread_rate"] * count), automated,
+                 cluster["owner_wrote_to_sender"])
+
+
 def _summary(clusters: list[dict], inbound: int) -> dict:
     def top(n):
         return round(sum(c["messages"] for c in clusters[:n]) / inbound, 3) if inbound else 0.0
@@ -213,11 +248,14 @@ def _summary(clusters: list[dict], inbound: int) -> dict:
 
 SHEET_COLUMNS = ("cluster", "sender_domains", "messages", "share", "cumulative_share",
                  "unread_rate", "automated_rate", "owner_wrote_to_sender", "gmail_categories",
-                 "sample_subjects", "hint", "category", "disposition", "notes")
+                 "sample_subjects", "hint", "category", "disposition", "surface_when", "notes")
 
 
 def write_sheet(path: Path, clusters: list[dict]) -> None:
-    """Labeling sheet: Stephen fills category and disposition per cluster."""
+    """Labeling sheet: Stephen fills category and disposition per cluster.
+
+    surface_when is an optional subject regex that sends a filed sender's mail to Stephen.
+    """
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=SHEET_COLUMNS)
         writer.writeheader()
@@ -227,7 +265,7 @@ def write_sheet(path: Path, clusters: list[dict]) -> None:
                              "gmail_categories": " ".join(f"{k.split('_', 1)[1].lower()}:{v}"
                                                           for k, v in c["gmail_categories"].items()),
                              "sample_subjects": " | ".join(c["sample_subjects"]),
-                             "category": "", "disposition": "", "notes": ""})
+                             "category": "", "disposition": "", "surface_when": "", "notes": ""})
 
 
 def main(argv: list[str] | None = None) -> None:
