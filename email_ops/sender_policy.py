@@ -23,7 +23,7 @@ from .sender_analysis import (GMAIL_CATEGORIES, PRIVATE_ROOT, cluster_key, looks
 
 
 CATEGORIES = ("Career", "Receipts", "Marketing", "Social Media", "Financial", "Accounts",
-              "Personal", "Newsletters")
+              "Personal", "Newsletters", "JD Delivery")
 DISPOSITIONS = ("ARCHIVE", "DIGEST", "INBOX", "MIXED")
 POLICY_COLUMNS = ("cluster", "category", "disposition", "surface_when", "notes")
 DEFAULT_POLICY = PRIVATE_ROOT / "policy" / "sender-policy.csv"
