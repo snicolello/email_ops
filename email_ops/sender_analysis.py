@@ -15,8 +15,12 @@ from datetime import datetime, timezone
 from email.utils import getaddresses
 import json
 from pathlib import Path
+import random
 import re
 import sys
+import time
+
+from googleapiclient.errors import HttpError
 
 from .core import Message
 from .extract import address, is_automated
@@ -31,6 +35,47 @@ GMAIL_CATEGORIES = ("CATEGORY_PERSONAL", "CATEGORY_SOCIAL", "CATEGORY_PROMOTIONS
                     "CATEGORY_UPDATES", "CATEGORY_FORUMS")
 SAMPLE_SUBJECTS = 3
 _LIST_ID = re.compile(r"<([^>]+)>")
+_GET_INTERVAL_SECONDS = 0.3  # 20 quota units/get; leave room below 6,000 units/minute.
+_MAX_QUOTA_RETRIES = 7
+
+
+class _QuotaPacer:
+    def __init__(self, interval: float = _GET_INTERVAL_SECONDS):
+        self.interval = interval
+        self.next_at = 0.0
+
+    def wait(self) -> None:
+        remaining = self.next_at - time.monotonic()
+        if remaining > 0:
+            time.sleep(remaining)
+        self.next_at = time.monotonic() + self.interval
+
+
+def _is_quota_error(error: HttpError) -> bool:
+    if error.resp.status == 429:
+        return True
+    if error.resp.status != 403:
+        return False
+    try:
+        details = json.loads(error.content)
+        reasons = {item.get("reason") for item in details.get("error", {}).get("errors", [])}
+        return bool(reasons & {"rateLimitExceeded", "userRateLimitExceeded"})
+    except (TypeError, ValueError, AttributeError):
+        return False
+
+
+def _execute_metadata(request, pacer: _QuotaPacer | None):
+    for attempt in range(_MAX_QUOTA_RETRIES + 1):
+        if pacer is not None:
+            pacer.wait()
+        try:
+            return request.execute()
+        except HttpError as error:
+            if not _is_quota_error(error) or attempt == _MAX_QUOTA_RETRIES:
+                raise
+            delay = min(2 ** attempt, 64) + random.uniform(0, 1)
+            print(f"  Gmail quota pause: retrying in {delay:.0f}s", file=sys.stderr, flush=True)
+            time.sleep(delay)
 
 
 def _list_ids(api, query: str, limit: int) -> list[str]:
@@ -46,17 +91,19 @@ def _list_ids(api, query: str, limit: int) -> list[str]:
     return ids[:limit]
 
 
-def fetch_metadata(api, query: str, limit: int, *, progress: bool = False) -> list[dict]:
+def fetch_metadata(api, query: str, limit: int, *, progress: bool = False,
+                   pacer: _QuotaPacer | None = None) -> list[dict]:
     """Return header/label metadata only; format=metadata never includes bodies."""
     if not 1 <= limit <= MAX_MESSAGES:
         raise ValueError(f"limit must be 1..{MAX_MESSAGES}")
     rows = []
     ids = _list_ids(api, query, limit)
     for n, message_id in enumerate(ids, 1):
+        request = api.users().messages().get(userId="me", id=message_id, format="metadata",
+                                             metadataHeaders=METADATA_HEADERS)
+        item = _execute_metadata(request, pacer)
         if progress and (n % 50 == 0 or n == len(ids)):
             print(f"  {query}: {n}/{len(ids)} messages", file=sys.stderr, flush=True)
-        item = api.users().messages().get(userId="me", id=message_id, format="metadata",
-                                          metadataHeaders=METADATA_HEADERS).execute()
         headers = {h["name"].lower(): h.get("value", "")
                    for h in item.get("payload", {}).get("headers", [])}
         rows.append({"id": item["id"], "thread_id": item.get("threadId", ""),
@@ -199,8 +246,9 @@ def main(argv: list[str] | None = None) -> None:
         parser.error(f"--out-dir must be under the private {PRIVATE_ROOT} directory")
     api = service(args.credentials, args.token)
     owner = api.users().getProfile(userId="me").execute()["emailAddress"]
-    sent = fetch_metadata(api, "in:sent", args.sent_limit, progress=True) if args.sent_limit else []
-    report = analyze(fetch_metadata(api, args.query, args.limit, progress=True), owner,
+    pacer = _QuotaPacer()
+    sent = fetch_metadata(api, "in:sent", args.sent_limit, progress=True, pacer=pacer) if args.sent_limit else []
+    report = analyze(fetch_metadata(api, args.query, args.limit, progress=True, pacer=pacer), owner,
                      correspondents(sent, owner))
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     args.out_dir.mkdir(parents=True, exist_ok=True)

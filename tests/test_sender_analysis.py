@@ -2,9 +2,14 @@
 
 import csv
 from collections import Counter
+import json
+
+import httplib2
 
 import pytest
+from googleapiclient.errors import HttpError
 
+import email_ops.sender_analysis as sender_analysis
 from email_ops.sender_analysis import (analyze, cluster_key, correspondents, fetch_metadata,
                                        write_sheet)
 
@@ -62,6 +67,43 @@ def test_fetch_is_metadata_only_bounded_and_paginated():
     assert [kw["maxResults"] for kind, kw in api.endpoint.calls if kind == "list"] == [500, 200]
     with pytest.raises(ValueError):
         fetch_metadata(api, "in:inbox", 1001)
+
+
+def test_quota_pacer_spaces_calls(monkeypatch):
+    now = [100.0]
+    delays = []
+    monkeypatch.setattr(sender_analysis.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(sender_analysis.time, "sleep",
+                        lambda seconds: (delays.append(seconds), now.__setitem__(0, now[0] + seconds)))
+    pacer = sender_analysis._QuotaPacer(0.3)
+    pacer.wait()
+    pacer.wait()
+    assert delays == [pytest.approx(0.3)]
+
+
+def test_quota_error_is_retried_but_other_403_is_not(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(sender_analysis.time, "sleep", sleeps.append)
+    monkeypatch.setattr(sender_analysis.random, "uniform", lambda _a, _b: 0)
+
+    class Request:
+        def __init__(self, reason):
+            self.reason, self.calls = reason, 0
+
+        def execute(self):
+            self.calls += 1
+            if self.calls == 1:
+                body = json.dumps({"error": {"errors": [{"reason": self.reason}]}}).encode()
+                raise HttpError(httplib2.Response({"status": 403}), body)
+            return {"id": "m1"}
+
+    quota = Request("rateLimitExceeded")
+    assert sender_analysis._execute_metadata(quota, None) == {"id": "m1"}
+    assert quota.calls == 2 and sleeps == [1]
+    other = Request("forbidden")
+    with pytest.raises(HttpError):
+        sender_analysis._execute_metadata(other, None)
+    assert other.calls == 1
 
 
 def test_cluster_key_prefers_list_id_then_sender():
