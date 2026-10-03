@@ -3,7 +3,12 @@ credentials.json
 client_secret*.json
 token*.json
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
 *.sqlite*
+filing-config.json
+filing-audit*.json
 *.eml
 *.mbox
 *.pst

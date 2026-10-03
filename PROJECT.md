@@ -15,7 +15,8 @@ Convert personal email into low-noise actionable state and reusable structured i
 ## Boundaries
 
 - In scope: Stephen's personal Gmail, bounded read-only sampling, local state, source provenance, and a future normalized-event handoff.
-- Out of scope: company mail, mailbox mutation, historical bulk cleanup, and JD Delivery implementation.
+- Issue #19 expands scope to label + archive infrastructure with private audit and bounded undo. M2 remains read-only; M3 is dry-run by default and requires separate Stephen-approved category promotion and verified `gmail.modify` for live execution. The currently saved authority remains exactly `gmail.readonly`; infrastructure implementation/merge does not authorize a scope change or activation.
+- Out of scope: company mail, send/delete/trash/spam/read-state changes, historical bulk cleanup, and JD Delivery implementation.
 - Stephen approves Gmail mutation, large historical runs, cross-project changes, external automation, and trust-zone promotion.
 
 ## Verification
