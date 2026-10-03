@@ -1,6 +1,6 @@
 # Email Ops state
 
-Updated: 2026-09-30
+Updated: 2026-10-03
 
 ## Current baseline
 
@@ -24,8 +24,11 @@ Personal project with Issue #1's deterministic Gmail baseline and Issue #3's unt
 - Issue #19 M1 labeling (2026-09-30): Stephen confirmed labels for the top 40 clusters (69.9% of inbound): 30 ARCHIVE, 4 DIGEST, 6 MIXED, with per-sender surface patterns for money and security notices. Newsletters was added to the topic list. `email_ops.sender_policy` loads the private policy table (`~/.email_ops/policy`), routes Tier 2 surface checks before Tier 1 filing, and measures tier shares; Git holds only the engine and a synthetic example. The measured cluster-level split of the 1,000 inbound messages is 48.8% ARCHIVE, 13.2% DIGEST (62.0% filed by Tier 1), 2.4% surfaced, and 35.6% middle. Hint-only role/bulk address signals cut the `person` hint from 176 to 23 messages; `extract.is_automated` is unchanged. The low correspondent match (1 message) reflects zero freemail senders in the inbound sample, not an address-matching defect. The 172-test suite exits cleanly. No Gmail call was made.
 - Issue #19 M2 started (2026-09-30): `email_ops.shadow` records read-only Tier 1-2 shadow decisions for new inbound mail in a private SQLite database, prints a Markdown digest that Stephen reads inline in the agent session, records corrections, and reports per-category promotion progress. The first run read metadata for 44 inbound messages from the last day (plus 500 sent headers to seed correspondents): 18 would archive, 8 would digest, 2 surfaced, and 16 middle. Scope remains exactly `gmail.readonly`; no Gmail change was made. The 178-test suite exits cleanly. After Stephen's first digest review, a JD Delivery category was added for job alerts (the cross-project handoff itself is not built), 15 more private policy rows were labeled, and 17 corrections were recorded; the historical Tier 1 share is now 68.5% (52.5% ARCHIVE, 16.0% DIGEST).
 
+- Issue #19 M3 remediation and follow-up prepared for review in PR #21 (2026-10-03), on `codex/issue-19-m3-filing`, with this follow-up based on `1de1ef938238a8f8bc8cc56a7944a79e5d5451e1`. `email_ops.filing` serves Tier 1 ARCHIVE (label + archive) and DIGEST (label only), with read-only preflight dry-run and a batch command capped at 100 eligible incoming messages. Private config cites Stephen's separate approval and binds account/enabled_since; the duplicate CLI approval and config label-name fields are removed. Live file/undo use one pinned-token authority verification and initial/final config checks; batches share profile/label/authority reads. Undo remains available after category demotion or removal at both gates, ignoring enablement/enabled_since while retaining kill-switch, account, and verified-authority checks; a missing category records an empty approval reference. A mid-batch kill-switch block halts further writes, skips the current/remaining selected decisions as stopped_by_kill_switch, and returns blocked/exit 2. Managed-label-only response comparison tolerates unrelated changes. Symmetric read-only reconciliation permits explicit re-file/re-undo, with not_applied/undone receipts reused under the same operation ID/history. Schema version 2 refuses populated older audits. Reconcile events are read-only; exit codes distinguish blocked (2) from uncertain (3), and CLI connections close. All relay items A-E and both follow-up items are implemented, with 128 focused fake/mocked adversarial cases and all 306 suite tests passing, including the unchanged forbidden-endpoint test. No real Gmail call, mutation, OAuth consent/refresh/scope change, token write, or category activation occurred; the saved token is byte-for-byte unchanged with exactly gmail.readonly. This is unmerged feature-branch evidence, not a live baseline.
+
 ## Pending
 
+- M3 remains disabled pending owner review and separate activation authority. DIGEST and the bounded batch command are implemented. Existing valid credentials and existing Email Ops user labels are required; label creation and credential lifecycle/consent remain outside this implementation. M2 has no historical account provenance, so Stephen must verify the private shadow database's account before activation. Reconcile must run after the prior CLI exits; it observes current state and cannot prove the fate of a delayed server request. Partial or conflicting managed-label states still require judgment. No live mutation proof is claimed.
 - A live waiting resolution was not found in the bounded search; only waiting creation and persistence through later replies were proven. Pattern-based suspicion signals are incomplete, and schema validation cannot prove a model route is semantically correct.
 - Structural segmentation removed the observed target shifts in this small paired corpus but worsened real-case false confidence. Its security signal is useful, but it is **REVISE_LATER** for future model experiments, not an approved classification path. Segmentation remains heuristic and can miss inline or novel steering. Provider-side zero-retention was requested, but no retention guarantee beyond API acceptance is independently verified. No model-driven routing is authorized.
 - The Issue #13 Stage A gate is experimental shadow code only. Its observed over-abstention leaves useful automation unproven. The private frozen labels and detailed results remain outside Git. No authoritative model routing or persistence is enabled.
@@ -33,7 +36,7 @@ Personal project with Issue #1's deterministic Gmail baseline and Issue #3's unt
 
 ## Deferred
 
-- Gmail mutation, historical bulk cleanup, JD Delivery changes, and production model routing remain deferred.
+- Live Gmail activation, historical bulk cleanup, JD Delivery changes, and production model routing remain deferred; M3 infrastructure is implemented for review only.
 - Gmail mutation, large historical runs, and cross-project changes retain Stephen's approval boundary.
 
 ## Blocked
@@ -42,7 +45,7 @@ Personal project with Issue #1's deterministic Gmail baseline and Issue #3's unt
 
 ## Next safe action
 
-Issue #19 M2 shadow is running on demand: each session runs `python -m email_ops.shadow run` and `digest`, and Stephen marks mistakes with `correct`. Label recurring unlabeled senders from the digest's middle section into the private policy. A local scheduled task runs the shadow pass and shows the digest daily at about noon ET while the Claude app is open. M3 (label + archive executor behind `gmail.modify`, dry-run by default) may be built during the shadow period, but no category goes live before it meets the promotion gate and Stephen approves it. After the Issue #18 branch merges, later milestones start on fresh branches from `main`. Gmail stays read-only until the archive/label capability is implemented and approved.
+Review the Issue #19 M3 feature PR; do not activate mutation or change OAuth authority as part of that review/merge. Continue the existing M2 shadow/digest/correct workflow and collect the per-category promotion evidence (14 days, 50 emails, zero wrong in the last 50). Stephen separately owns promotion approval and any future credential change. The saved Gmail scope stays exactly `gmail.readonly`, and no category is enabled by this implementation. M1/M2 are already on main through merged PR #20.
 
 ## Evidence
 
@@ -63,5 +66,7 @@ Issue #19 M2 shadow is running on demand: each session runs `python -m email_ops
 - https://github.com/snicolello/email_ops/issues/18
 - https://github.com/snicolello/email_ops/pull/17
 - https://github.com/snicolello/email_ops/issues/19
+- https://github.com/snicolello/email_ops/pull/20
+- https://github.com/snicolello/email_ops/pull/21
 - https://github.com/snicolello/stephen-project-hub/issues/50
 

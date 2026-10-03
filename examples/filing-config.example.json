@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "account": "owner@example.test",
+  "kill_switch": true,
+  "categories": {
+    "Marketing": {
+      "enabled": false,
+      "approval_reference": "",
+      "enabled_since": null
+    }
+  }
+}
