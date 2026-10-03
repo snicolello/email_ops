@@ -322,6 +322,7 @@ def test_undo_restores_only_executor_delta(setup, prior):
 def test_undo_rechecks_authority_switches_and_account(setup):
     s = setup
     op = run(s)["operation_id"]
+    change_config(s, lambda c: c["categories"]["Marketing"].update(enabled=False))
     for kw in ({"credentials": Credentials(SCOPES)},):
         with pytest.raises(filing.FilingError):
             undo(s, op, **kw)
@@ -333,6 +334,9 @@ def test_undo_rechecks_authority_switches_and_account(setup):
     with pytest.raises(filing.FilingError, match="account differs"):
         undo(s, op)
     assert len(s.api.writes) == 1
+    s.api.account = "owner@example.test"
+    assert undo(s, op)["state"] == "undone"
+    assert len(s.api.writes) == 2
 
 
 def test_undo_managed_label_conflict_blocks(setup):
@@ -870,3 +874,78 @@ def test_cli_rejects_removed_approval_flag_and_blocks_with_exit_2(setup, monkeyp
         with pytest.raises(SystemExit) as error:
             filing.main(cli_args(setup, ["file", "1", "--live", "--shadow-db", str(setup.shadow), *extra]))
         assert error.value.code == 2
+
+
+@pytest.mark.parametrize("demotion", ["disabled", "removed"])
+@pytest.mark.parametrize("moment", ["preflight", "before_write"])
+def test_undo_survives_demotion_or_removed_category_at_both_gates(setup, demotion, moment):
+    op = run(setup)["operation_id"]
+
+    def demote():
+        if demotion == "disabled":
+            change_config(setup, lambda c: c["categories"]["Marketing"].update(
+                enabled=False, enabled_since="2060-01-01"))
+        else:
+            change_config(setup, lambda c: c.update(categories={}))
+
+    if moment == "preflight":
+        demote()
+    else:
+        original = setup.api.get
+
+        def get(**kw):
+            demote()
+            return original(**kw)
+        setup.api.get = get
+    assert undo(setup, op)["state"] == "undone"
+    assert len(setup.api.writes) == 2  # forward filing plus exactly one undo
+    assert setup.api.state == {"INBOX", "UNREAD", "STARRED"}
+    event = setup.db.execute("SELECT * FROM events WHERE action = 'undo' AND result = 'write_authorized' "
+                             "ORDER BY id DESC LIMIT 1").fetchone()
+    assert json.loads(event["details"])["approval_reference"] == ("" if demotion == "removed" else APPROVAL)
+
+
+def flip_kill_switch_during_modify(s):
+    original = s.api.modify
+    observed = {}
+
+    def modify(**kw):
+        request = original(**kw)
+
+        def apply():
+            response = request.execute(num_retries=0)
+            change_config(s, lambda c: c.update(kill_switch=True))
+            observed["gets_at_flip"] = sum(kind == "get" for kind, _ in s.api.calls)
+            return response
+        return Request(apply)
+    s.api.modify = modify
+    return observed
+
+
+def test_batch_stops_after_kill_switch_flips_during_first_write(setup):
+    add_decision(setup, 2)
+    add_decision(setup, 3)
+    observed = flip_kill_switch_during_modify(setup)
+    result = batch(setup)
+    assert result["state"] == "blocked" and result["listed"] == 3 and result["filed"] == 1
+    assert result["skipped"] == 2 and result["skip_reasons"] == [
+        {"decision_id": 2, "reason": "stopped_by_kill_switch"},
+        {"decision_id": 3, "reason": "stopped_by_kill_switch"}]
+    assert len(setup.api.writes) == 1
+    assert sum(kind == "get" for kind, _ in setup.api.calls) - observed["gets_at_flip"] <= 1
+    assert setup.api.states["m2"] == setup.api.states["m3"] == {"INBOX", "UNREAD"}
+
+
+def test_cli_batch_kill_switch_is_exit_2(setup, monkeypatch, capsys):
+    add_decision(setup, 2)
+    add_decision(setup, 3)
+    flip_kill_switch_during_modify(setup)
+    monkeypatch.setattr(filing, "PRIVATE_ROOT", setup.root)
+    monkeypatch.setattr(filing, "open_api", lambda *a: (setup.api, setup.credentials))
+    with pytest.raises(SystemExit) as error:
+        filing.main(cli_args(setup, ["run", "--live", "--shadow-db", str(setup.shadow)]))
+    assert error.value.code == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["state"] == "blocked" and result["filed"] == 1
+    assert all(item["reason"] == "stopped_by_kill_switch" for item in result["skip_reasons"])
+    assert len(setup.api.writes) == 1

@@ -45,6 +45,10 @@ class FilingError(ValueError):
     """A fail-closed executor boundary; messages contain no provider errors."""
 
 
+class KillSwitchError(FilingError):
+    """Global stop: batch execution must not continue after this boundary."""
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
@@ -125,7 +129,7 @@ def load_config(path: Path) -> dict:
         raise FilingError("missing or malformed filing configuration; mutation disabled") from None
 
 
-def _check_config(config, category, *, live, account=None, received_ms=None):
+def _check_config(config, category, *, live, account=None, received_ms=None, require_enabled=True):
     if account is not None and account != config["account"]:
         raise FilingError("credential account differs from configured shadow-source account")
     if category is not None and category not in CATEGORIES:
@@ -133,8 +137,8 @@ def _check_config(config, category, *, live, account=None, received_ms=None):
     if not live:
         return
     if config["kill_switch"]:
-        raise FilingError("global kill switch is on")
-    if category is not None:
+        raise KillSwitchError("global kill switch is on")
+    if category is not None and require_enabled:
         entry = config["categories"].get(category)
         if not entry or not entry["enabled"]:
             raise FilingError("category is not explicitly enabled")
@@ -142,9 +146,10 @@ def _check_config(config, category, *, live, account=None, received_ms=None):
             raise FilingError("decision predates category enabled_since")
 
 
-def _gate(config_path, category, *, live, account=None, received_ms=None):
+def _gate(config_path, category, *, live, account=None, received_ms=None, require_enabled=True):
     config = load_config(config_path)
-    _check_config(config, category, live=live, account=account, received_ms=received_ms)
+    _check_config(config, category, live=live, account=account, received_ms=received_ms,
+                  require_enabled=require_enabled)
     return config
 
 
@@ -276,12 +281,12 @@ def _modify(db, api, op, before, added, removed, action, config_path, received_m
     """Durable in-flight receipt, final config read, then at most one write attempt."""
     try:
         config = _gate(config_path, op["category"], live=True, account=op["account"],
-                       received_ms=received_ms)
+                       received_ms=received_ms, require_enabled=action == "file")
     except FilingError:
         _state(db, op, "not_applied" if action == "file" else "completed", action,
                {"blocked_before_write": True})
         raise
-    approval = config["categories"][op["category"]]["approval_reference"]
+    approval = config["categories"].get(op["category"], {}).get("approval_reference", "")
     _event(db, op["id"], action, "live", "write_authorized", {"approval_reference": approval})
     if not added and not removed:
         return _state(db, op, "completed" if action == "file" else "undone", action,
@@ -398,7 +403,7 @@ def undo(db, operation_id: str, config_path: Path, *, live=False,
     op = _operation(db, operation_id)
     mode = "live" if live else "dry-run"
     try:
-        config = _gate(config_path, op["category"], live=live, account=op["account"])
+        config = _gate(config_path, op["category"], live=live, account=op["account"], require_enabled=False)
         session = _session(config, live=live, api=api, credentials=credentials, token_path=token_path)
         api = session["api"]
         if session["account"] != op["account"]:
@@ -408,7 +413,7 @@ def undo(db, operation_id: str, config_path: Path, *, live=False,
         op = _operation(db, operation_id)
         if live and op["state"] == "undone":
             db.rollback()
-            _gate(config_path, op["category"], live=True, account=op["account"])
+            _gate(config_path, op["category"], live=True, account=op["account"], require_enabled=False)
             _event(db, op["id"], "undo", mode, "already_undone", {})
             return {"operation_id": op["id"], "state": "undone"}
         if op["state"] != "completed":
@@ -428,7 +433,7 @@ def undo(db, operation_id: str, config_path: Path, *, live=False,
             return {"state": "dry_run", "plan": plan}
         _event(db, op["id"], "undo", mode, "requested", {"category": op["category"]}, commit=False)
         _state(db, op, "undo_in_flight", "undo", {"before": sorted(current),
-                   "approval_reference": config["categories"][op["category"]]["approval_reference"]})
+                   "approval_reference": config["categories"].get(op["category"], {}).get("approval_reference", "")})
     except Exception as exc:
         db.rollback()
         _event(db, op["id"], "undo", mode, "blocked",
@@ -541,6 +546,12 @@ def run(db, shadow_path: Path, config_path: Path, *, category=None, live=False,
                 label_ids[target] = _label(session["labels"], f"Email Ops/{target}")
             outcome = file(db, shadow_path, decision_id, config_path, live=live,
                            session=session, label_id=label_ids[target])
+        except KillSwitchError as exc:
+            _event(db, None, "run", mode, "blocked", {"decision_id": decision_id, "reason": str(exc)})
+            for remaining, _ in selected[index:]:
+                skip(remaining, "stopped_by_kill_switch")
+            result["state"] = "blocked"
+            break
         except FilingError as exc:
             blocked = True
             skip(decision_id, str(exc))
