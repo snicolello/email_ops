@@ -5,8 +5,8 @@
   "categories": {
     "Marketing": {
       "enabled": false,
-      "label_name": "Email Ops/Marketing",
-      "approval_reference": ""
+      "approval_reference": "",
+      "enabled_since": null
     }
   }
 }

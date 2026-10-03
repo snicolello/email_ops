@@ -3,6 +3,7 @@
 import ast
 import json
 from pathlib import Path
+import sqlite3
 from types import SimpleNamespace
 
 import pytest
@@ -34,11 +35,19 @@ class Request:
 
 class FakeGmail:
     def __init__(self, labels=("INBOX", "UNREAD", "STARRED")):
-        self.state, self.calls, self.writes = set(labels), [], []
+        self.states, self.calls, self.writes, self.applied = {"m1": set(labels)}, [], [], []
         self.account = "owner@example.test"
         self.label_rows = [{"id": LABEL, "name": "Email Ops/Marketing", "type": "user"}]
         self.behavior = "success"
         self.label_read = None
+
+    @property
+    def state(self):
+        return self.states["m1"]
+
+    @state.setter
+    def state(self, value):
+        self.states["m1"] = value
 
     def users(self):
         return self
@@ -59,33 +68,39 @@ class FakeGmail:
             self.label_read()
         return Request(lambda: {"labels": self.label_rows})
 
-    def response(self):
-        return {"id": "m1", "threadId": "t1", "labelIds": sorted(self.state)}
+    def response(self, message_id="m1"):
+        return {"id": message_id, "threadId": "t" + message_id[1:],
+                "labelIds": sorted(self.states[message_id])}
 
     def get(self, **kw):
-        assert kw == {"userId": "me", "id": "m1", "format": "minimal",
+        assert kw == {"userId": "me", "id": kw["id"], "format": "minimal",
                       "fields": "id,threadId,labelIds"}
         self.calls.append(("get", kw))
-        return Request(self.response)
+        return Request(lambda: self.response(kw["id"]))
 
     def modify(self, **kw):
-        assert kw["userId"] == "me" and kw["id"] == "m1"
+        assert kw["userId"] == "me" and kw["id"] in self.states
         assert set(kw["body"]) == {"addLabelIds", "removeLabelIds"}
-        assert set(kw["body"]["addLabelIds"]) <= {LABEL, "INBOX"}
-        assert set(kw["body"]["removeLabelIds"]) <= {LABEL, "INBOX"}
+        assert set(kw["body"]["addLabelIds"]) <= {LABEL, "Label_456", "INBOX"}
+        assert set(kw["body"]["removeLabelIds"]) <= {LABEL, "Label_456", "INBOX"}
 
         def apply():
             self.writes.append(kw["body"])
             if self.behavior == "timeout_before":
                 raise TimeoutError("synthetic provider error must not enter audit")
-            self.state |= set(kw["body"]["addLabelIds"])
+            state = self.states[kw["id"]]
+            state |= set(kw["body"]["addLabelIds"])
             if self.behavior != "partial":
-                self.state -= set(kw["body"]["removeLabelIds"])
+                state -= set(kw["body"]["removeLabelIds"])
+            self.applied.append(kw["body"])
+            if self.behavior == "read_during_modify":
+                state.discard("UNREAD")
+                state.add("CATEGORY_UPDATES")
             if self.behavior == "timeout_after":
                 raise TimeoutError("synthetic provider error must not enter audit")
             if self.behavior == "malformed":
                 return {}
-            return self.response()
+            return self.response(kw["id"])
         return Request(apply)
 
 
@@ -110,14 +125,14 @@ def setup(tmp_path):
     db = shadow.connect(shadow_path)
     db.execute("INSERT INTO runs VALUES (1, 'synthetic', 'synthetic', 1, 1, 0, 'v1')")
     db.execute("INSERT INTO decisions VALUES "
-               "(1, 'm1', 't1', 1, 'sender:synthetic', 'sender@example.test', 'synthetic', "
+               "(1, 'm1', 't1', 1800000000000, 'sender:synthetic', 'sender@example.test', 'synthetic', "
                "1, 'ARCHIVE', 'Marketing', 'policy', 'v1', 1, NULL)")
     db.commit()
     db.close()
     config = tmp_path / "config.json"
     config.write_text(json.dumps({"schema_version": 1, "account": "owner@example.test",
         "kill_switch": False, "categories": {
-        "Marketing": {"enabled": True, "label_name": "Email Ops/Marketing",
+        "Marketing": {"enabled": True, "enabled_since": "2026-01-01",
                       "approval_reference": APPROVAL}}}))
     audit = filing.connect(tmp_path / "audit.db")
     yield SimpleNamespace(db=audit, shadow=shadow_path, config=config,
@@ -126,13 +141,13 @@ def setup(tmp_path):
 
 
 def run(s, **kw):
-    args = dict(live=True, approval=APPROVAL, api=s.api, credentials=s.credentials)
+    args = dict(live=True, api=s.api, credentials=s.credentials)
     args.update(kw)
     return filing.file(s.db, s.shadow, 1, s.config, **args)
 
 
 def undo(s, operation, **kw):
-    args = dict(live=True, approval=APPROVAL, api=s.api, credentials=s.credentials)
+    args = dict(live=True, api=s.api, credentials=s.credentials)
     args.update(kw)
     return filing.undo(s.db, operation, s.config, **args)
 
@@ -143,24 +158,27 @@ def change_config(s, update):
     s.config.write_text(json.dumps(config))
 
 
-def test_default_dry_run_is_offline_and_audited(setup, tokeninfo):
+def test_default_dry_run_is_readonly_and_audited(setup, tokeninfo):
     s = setup
-    s.config.unlink()
-    result = filing.file(s.db, s.shadow, 1, s.config)
+    result = run(s, live=False, credentials=Credentials(SCOPES))
     assert result["state"] == "dry_run"
-    assert not s.api.calls and not tokeninfo
+    assert [kind for kind, _ in s.api.calls] == ["profile", "labels", "get"]
+    assert not s.api.writes and not tokeninfo
+    assert set(result) == {"state", "plan"}
+    assert result["plan"]["added"] == [LABEL]
+    assert result["plan"]["removed"] == ["INBOX"]
     assert s.db.execute("SELECT count(*) FROM operations").fetchone()[0] == 0
     events = s.db.execute("SELECT * FROM events").fetchall()
-    assert [e["result"] for e in events] == ["requested", "dry_run"]
+    assert [e["result"] for e in events] == ["dry_run"]
     details = json.loads(events[-1]["details"])
     assert details["category"] == "Marketing" and details["message_id"] == "m1"
     assert details["source"]["decision_id"] == 1
-    assert all(e["mode"] == "dry-run" and e["at"] and e["operation_id"] for e in events)
+    assert all(e["mode"] == "dry-run" and e["at"] and e["operation_id"] is None for e in events)
 
 
 @pytest.mark.parametrize("credentials", [Credentials(SCOPES), Credentials(()), Credentials(valid=False), None])
 def test_readonly_missing_or_invalid_authority_blocks(setup, credentials, tokeninfo):
-    with pytest.raises(filing.FilingError, match="gmail.modify"):
+    with pytest.raises(filing.FilingError, match="gmail.modify|missing or expired"):
         run(setup, credentials=credentials)
     assert not setup.api.calls and not setup.api.writes and not tokeninfo
 
@@ -226,13 +244,6 @@ def test_ambiguous_config_fields_block(setup, update):
     assert not setup.api.calls
 
 
-@pytest.mark.parametrize("approval", [None, "", "a different approval"])
-def test_config_enablement_does_not_supply_owner_approval(setup, approval):
-    with pytest.raises(filing.FilingError, match="independent Stephen approval"):
-        run(setup, approval=approval)
-    assert not setup.api.calls
-
-
 def test_success_is_reserved_before_write_and_reversible(setup):
     s = setup
     original = s.api.modify
@@ -274,7 +285,7 @@ def test_unknown_outcome_is_not_blindly_retried(setup, behavior):
     with pytest.raises(filing.FilingError, match="requires a completed"):
         undo(s, result["operation_id"])
     inspected = filing.reconcile(s.db, result["operation_id"], s.api)
-    assert inspected["state"] == ("completed" if behavior in {"timeout_after", "malformed"} else "uncertain")
+    assert inspected["state"] == ("completed" if behavior in {"timeout_after", "malformed"} else "not_applied" if behavior == "timeout_before" else "uncertain")
     assert len(s.api.writes) == 1
     if inspected["state"] == "uncertain":
         with pytest.raises(filing.FilingError):
@@ -305,14 +316,13 @@ def test_undo_restores_only_executor_delta(setup, prior):
     assert s.api.state == (set(prior) - {"UNREAD"}) | {"Label_unrelated"}
     assert undo(s, result["operation_id"])["state"] == "undone"
     assert len(s.api.writes) <= writes + 1
-    with pytest.raises(filing.FilingError, match="already reserved"):
-        run(s)
+    assert run(s)["operation_id"] == result["operation_id"]
 
 
 def test_undo_rechecks_authority_switches_and_account(setup):
     s = setup
     op = run(s)["operation_id"]
-    for kw in ({"credentials": Credentials(SCOPES)}, {"approval": None}):
+    for kw in ({"credentials": Credentials(SCOPES)},):
         with pytest.raises(filing.FilingError):
             undo(s, op, **kw)
     change_config(s, lambda c: c.update(kill_switch=True))
@@ -362,19 +372,20 @@ def test_requires_unambiguous_existing_user_label(setup, rows):
     assert not setup.api.writes
 
 
-def test_switch_is_rechecked_after_preflight(setup):
+def test_switch_is_rechecked_after_preflight(setup, tokeninfo):
     setup.api.label_read = lambda: change_config(setup, lambda c: c.update(kill_switch=True))
     with pytest.raises(filing.FilingError, match="kill switch"):
         run(setup)
     assert not setup.api.writes
     assert setup.db.execute("SELECT state FROM operations").fetchone()[0] == "not_applied"
+    assert len(tokeninfo) == 1
 
 
-@pytest.mark.parametrize("disposition,tier", [("DIGEST", 1), ("INBOX", 2), ("ARCHIVE", 3), ("DELETE", 1)])
+@pytest.mark.parametrize("disposition,tier", [("INBOX", 2), ("ARCHIVE", 3), ("DELETE", 1)])
 def test_only_archive_tier1_decisions_are_accepted(setup, disposition, tier):
     with shadow.connect(setup.shadow) as db:
         db.execute("UPDATE decisions SET disposition = ?, tier = ?", (disposition, tier))
-    with pytest.raises(filing.FilingError, match="Tier 1 ARCHIVE"):
+    with pytest.raises(filing.FilingError, match="Tier 1 ARCHIVE/DIGEST"):
         run(setup)
     assert not setup.api.calls
 
@@ -389,7 +400,7 @@ def test_conflicting_correction_is_not_ignored(setup):
 
 def test_cli_private_paths_and_dry_run(setup, monkeypatch, capsys):
     monkeypatch.setattr(filing, "PRIVATE_ROOT", setup.root)
-    monkeypatch.setattr(filing, "open_api", lambda *a: pytest.fail("dry-run opened Gmail"))
+    monkeypatch.setattr(filing, "open_api", lambda *a: (setup.api, Credentials(SCOPES)))
     filing.main(["--audit", str(setup.root / "cli.db"), "--config", str(setup.config),
                  "--token", str(setup.root / "token.json"), "file", "1", "--shadow-db", str(setup.shadow)])
     assert json.loads(capsys.readouterr().out)["state"] == "dry_run"
@@ -413,7 +424,7 @@ def test_only_allowlisted_gmail_endpoints_are_present():
     assert SCOPES == ["https://www.googleapis.com/auth/gmail.readonly"]
 
 
-def test_kill_switch_rechecked_after_final_scope_check(setup, monkeypatch):
+def test_kill_switch_rechecked_after_final_scope_check(setup, monkeypatch, tokeninfo):
     original = filing.verify_authority
     calls = 0
 
@@ -421,13 +432,14 @@ def test_kill_switch_rechecked_after_final_scope_check(setup, monkeypatch):
         nonlocal calls
         original(credentials)
         calls += 1
-        if calls == 2:
+        if calls == 1:
             change_config(setup, lambda c: c.update(kill_switch=True))
     monkeypatch.setattr(filing, "verify_authority", verify)
-    with pytest.raises(filing.FilingError, match="boundary check"):
+    with pytest.raises(filing.FilingError, match="kill switch"):
         run(setup)
     assert not setup.api.writes
     assert setup.db.execute("SELECT state FROM operations").fetchone()[0] == "not_applied"
+    assert calls == 1 and len(tokeninfo) == 1
 
 
 @pytest.mark.parametrize("field,value", [("added", '["SPAM"]'), ("removed", '["UNREAD"]'),
@@ -460,9 +472,9 @@ def test_cli_live_preflight_failure_is_audited(setup, monkeypatch):
     with pytest.raises(SystemExit):
         filing.main(["--audit", str(cli_audit), "--config", str(setup.config),
                      "--token", str(setup.root / "token.json"), "file", "1", "--live",
-                     "--approval", APPROVAL, "--shadow-db", str(setup.shadow)])
+                     "--shadow-db", str(setup.shadow)])
     with filing.connect(cli_audit) as db:
-        assert [r[0] for r in db.execute("SELECT result FROM events")] == ["requested", "blocked"]
+        assert [r[0] for r in db.execute("SELECT result FROM events")] == ["blocked"]
 
 
 def test_open_api_uses_existing_token_without_writes_or_scope_override(setup, monkeypatch):
@@ -487,7 +499,7 @@ def test_open_api_uses_existing_token_without_writes_or_scope_override(setup, mo
     assert api is setup.api and authority is creds and seen == [token_path]
     assert token_path.read_bytes() == before
     creds.valid = False
-    with pytest.raises(filing.FilingError, match="no OAuth flow or token write"):
+    with pytest.raises(filing.FilingError, match="no OAuth flow, refresh or token write"):
         filing.open_api(token_path)
     assert token_path.read_bytes() == before
 
@@ -517,7 +529,7 @@ def test_another_invocation_cannot_write_during_in_flight_operation(setup):
     def overlap(**kw):
         with filing.connect(setup.root / "audit.db") as other:
             with pytest.raises(filing.FilingError, match="already reserved"):
-                filing.file(other, setup.shadow, 1, setup.config, live=True, approval=APPROVAL,
+                filing.file(other, setup.shadow, 1, setup.config, live=True,
                             api=setup.api, credentials=setup.credentials)
         return original(**kw)
     setup.api.modify = overlap
@@ -528,7 +540,333 @@ def test_another_invocation_cannot_write_during_in_flight_operation(setup):
 @pytest.mark.parametrize("response", [{"id": "m1", "threadId": "different", "labelIds": ["INBOX"]},
                                       {"id": "m1", "threadId": "t1"}])
 def test_source_mismatch_or_missing_state_blocks_before_write(setup, response):
-    setup.api.response = lambda: response
+    setup.api.response = lambda *a: response
     with pytest.raises(filing.FilingError, match="ambiguous Gmail message"):
         run(setup)
     assert not setup.api.writes
+
+
+def add_decision(s, number, *, category="Marketing", disposition="ARCHIVE", received_ms=1800000000000):
+    with shadow.connect(s.shadow) as db:
+        db.execute("INSERT INTO decisions VALUES (?, ?, ?, ?, 'sender:synthetic', "
+                   "'sender@example.test', 'synthetic', 1, ?, ?, 'policy', 'v1', 1, NULL)",
+                   (number, f"m{number}", f"t{number}", received_ms, disposition, category))
+    s.api.states[f"m{number}"] = {"INBOX", "UNREAD"}
+
+
+def batch(s, **kw):
+    args = dict(live=True, api=s.api, credentials=s.credentials)
+    args.update(kw)
+    return filing.run(s.db, s.shadow, s.config, **args)
+
+
+def test_not_applied_can_refile_with_same_receipt_and_history(setup):
+    s = setup
+    s.api.label_read = lambda: change_config(s, lambda c: c.update(kill_switch=True))
+    with pytest.raises(filing.FilingError, match="kill switch"):
+        run(s)
+    op = s.db.execute("SELECT * FROM operations").fetchone()
+    assert op["state"] == "not_applied" and not s.api.writes
+    change_config(s, lambda c: c.update(kill_switch=False))
+    s.api.label_read = None
+    result = run(s)
+    assert result == {"operation_id": op["id"], "state": "completed"}
+    assert len(s.api.writes) == 1
+    history = [r[0] for r in s.db.execute("SELECT result FROM events WHERE operation_id = ? ORDER BY id",
+                                        (op["id"],))]
+    after_block = history[history.index("not_applied") + 1:]
+    assert "filing_in_flight" in after_block and after_block[-1] == "completed"
+    assert filing._operation(s.db, op["id"])["created_at"] == op["created_at"]
+
+
+def test_unrelated_change_inside_write_is_completed(setup):
+    setup.api.behavior = "read_during_modify"
+    assert run(setup)["state"] == "completed"
+    assert len(setup.api.writes) == 1
+    assert setup.api.state == {LABEL, "STARRED", "CATEGORY_UPDATES"}
+
+
+def test_explicit_refile_after_reconciled_unapplied_timeout(setup):
+    setup.api.behavior = "timeout_before"
+    first = run(setup)
+    assert first["state"] == "uncertain"
+    assert filing.reconcile(setup.db, first["operation_id"], setup.api)["state"] == "not_applied"
+    setup.api.behavior = "success"
+    assert run(setup) == {"operation_id": first["operation_id"], "state": "completed"}
+    assert len(setup.api.writes) == 2 and len(setup.api.applied) == 1
+
+
+def test_explicit_reundo_after_reconciled_unapplied_timeout(setup):
+    op = run(setup)["operation_id"]
+    setup.api.behavior = "timeout_before"
+    assert undo(setup, op)["state"] == "undo_uncertain"
+    assert filing.reconcile(setup.db, op, setup.api)["state"] == "completed"
+    setup.api.behavior = "success"
+    assert undo(setup, op)["state"] == "undone"
+    # Two applied mailbox writes: filing and successful explicit undo. The
+    # intervening socket failure is a third attempt with no applied fake effect.
+    assert len(setup.api.applied) == 2 and len(setup.api.writes) == 3
+    assert setup.api.state == {"INBOX", "UNREAD", "STARRED"}
+
+
+@pytest.mark.parametrize("action,observed,state", [
+    ("file", {LABEL}, "completed"), ("file", {"INBOX"}, "not_applied"),
+    ("file", {LABEL, "INBOX"}, "uncertain"), ("file", {LABEL, "SPAM"}, "uncertain"),
+    ("undo", {LABEL}, "completed"), ("undo", {"INBOX"}, "undone"),
+    ("undo", {LABEL, "INBOX"}, "undo_uncertain"), ("undo", {"INBOX", "TRASH"}, "undo_uncertain")])
+def test_reconciliation_state_table_and_readonly_event(setup, action, observed, state, tokeninfo):
+    op = run(setup)["operation_id"]
+    filing._state(setup.db, filing._operation(setup.db, op),
+                  "uncertain" if action == "file" else "undo_uncertain", action)
+    setup.api.state = observed | {"Label_unrelated"}
+    count = len(tokeninfo)
+    assert filing.reconcile(setup.db, op, setup.api)["state"] == state
+    assert len(setup.api.writes) == 1 and len(tokeninfo) == count
+    event = setup.db.execute("SELECT * FROM events ORDER BY id DESC LIMIT 1").fetchone()
+    assert event["mode"] == "read-only" and event["result"] == state
+
+
+def test_refile_updates_disposition_and_prior_in_same_operation(setup):
+    first = run(setup)
+    undo(setup, first["operation_id"])
+    with shadow.connect(setup.shadow) as db:
+        db.execute("UPDATE decisions SET disposition = 'DIGEST', policy_version = 'v2'")
+    setup.api.state.add("Label_unrelated")
+    assert run(setup)["operation_id"] == first["operation_id"]
+    op = filing._operation(setup.db, first["operation_id"])
+    assert op["disposition"] == "DIGEST" and json.loads(op["removed"]) == []
+    assert "Label_unrelated" in json.loads(op["prior"])
+    assert json.loads(op["source"])["policy_version"] == "v2"
+
+
+def test_digest_labels_without_archiving_and_undo_only_removes_label(setup):
+    with shadow.connect(setup.shadow) as db:
+        db.execute("UPDATE decisions SET disposition = 'DIGEST'")
+    result = run(setup)
+    assert setup.api.writes == [{"addLabelIds": [LABEL], "removeLabelIds": []}]
+    assert "INBOX" in setup.api.state
+    assert filing._operation(setup.db, result["operation_id"])["disposition"] == "DIGEST"
+    assert undo(setup, result["operation_id"])["state"] == "undone"
+    assert setup.api.writes[-1] == {"addLabelIds": [], "removeLabelIds": [LABEL]}
+    assert setup.api.state == {"INBOX", "UNREAD", "STARRED"}
+
+
+def test_digest_receipt_with_inbox_removal_is_rejected(setup):
+    with shadow.connect(setup.shadow) as db:
+        db.execute("UPDATE decisions SET disposition = 'DIGEST'")
+    op = run(setup)["operation_id"]
+    setup.db.execute("UPDATE operations SET removed = '[\"INBOX\"]' WHERE id = ?", (op,))
+    setup.db.commit()
+    with pytest.raises(filing.FilingError, match="invalid executor receipt"):
+        undo(setup, op)
+    assert len(setup.api.writes) == 1
+
+
+def test_one_authority_check_and_two_config_reads_per_live_invocation(setup, monkeypatch, tokeninfo):
+    original = filing.load_config
+    reads = []
+
+    def load(path):
+        reads.append(path)
+        return original(path)
+    monkeypatch.setattr(filing, "load_config", load)
+    op = run(setup)["operation_id"]
+    assert len(reads) == 2 and len(tokeninfo) == 1
+    reads.clear()
+    undo(setup, op)
+    assert len(reads) == 2 and len(tokeninfo) == 2
+    events = setup.db.execute("SELECT * FROM events WHERE result IN ('filing_in_flight', 'undo_in_flight')")
+    assert all(json.loads(event["details"])["approval_reference"] == APPROVAL for event in events)
+
+
+@pytest.mark.parametrize("credentials", [None, Credentials(valid=False)])
+def test_dry_run_missing_expired_token_fails_closed(setup, credentials, tokeninfo):
+    with pytest.raises(filing.FilingError, match="missing or expired"):
+        run(setup, live=False, credentials=credentials)
+    assert not setup.api.calls and not setup.api.writes and not tokeninfo
+
+
+@pytest.mark.parametrize("field,value", [("enabled_since", None), ("enabled_since", "2026-13-01"),
+    ("enabled_since", "20260101"), ("enabled_since", "2026-01-01T00:00:00Z"),
+    ("enabled_since", True), ("approval_reference", " ")])
+def test_enabled_config_requires_canonical_date_and_approval(setup, field, value):
+    change_config(setup, lambda c: c["categories"]["Marketing"].update({field: value}))
+    with pytest.raises(filing.FilingError, match="configuration"):
+        run(setup)
+    assert not setup.api.calls
+
+
+def test_single_live_file_cannot_bypass_enabled_since(setup):
+    change_config(setup, lambda c: c["categories"]["Marketing"].update(enabled_since="2030-01-01"))
+    with pytest.raises(filing.FilingError, match="predates"):
+        run(setup)
+    assert not setup.api.calls
+
+
+def test_batch_selection_and_every_skip_reason(setup, tokeninfo):
+    s = setup
+    add_decision(s, 2, category="Receipts")
+    add_decision(s, 3, received_ms=1)
+    add_decision(s, 4)
+    add_decision(s, 5)
+    add_decision(s, 6, disposition="DIGEST")
+    with shadow.connect(s.shadow) as db:
+        shadow.correct(db, 4, "INBOX")
+    run(s)
+    op = filing.file(s.db, s.shadow, 5, s.config, live=True, api=s.api, credentials=s.credentials)
+    filing._state(s.db, filing._operation(s.db, op["operation_id"]), "uncertain", "file")
+    s.api.calls.clear()
+    tokeninfo.clear()
+    outcome = batch(s, live=False, credentials=Credentials(SCOPES))
+    assert outcome["listed"] == 1 and outcome["filed"] == 0 and outcome["skipped"] == 5
+    assert {r["reason"] for r in outcome["skip_reasons"]} == {
+        "category_not_enabled", "before_enabled_since", "conflicting_correction", "already_completed",
+        "reserved_uncertain"}
+    assert outcome["plans"][0]["decision_id"] == 6 and outcome["plans"][0]["removed"] == []
+    assert [kind for kind, _ in s.api.calls] == ["profile", "labels", "get"] and not tokeninfo
+    assert len(s.api.writes) == 2
+
+
+def test_batch_latest_correction_wins_and_named_category_is_bounded(setup):
+    add_decision(setup, 2, category="Receipts")
+    with shadow.connect(setup.shadow) as db:
+        shadow.correct(db, 1, "INBOX")
+        shadow.correct(db, 1, "ARCHIVE")
+    result = batch(setup, category="Marketing", live=False)
+    assert result["listed"] == 1 and result["skipped"] == 0
+    assert result["plans"][0]["message_id"] == "m1"
+    assert not setup.api.writes
+
+
+def test_batch_enabled_since_is_inclusive_at_utc_midnight(setup):
+    since = filing._since(json.loads(setup.config.read_text())["categories"]["Marketing"])
+    with shadow.connect(setup.shadow) as db:
+        db.execute("UPDATE decisions SET received_ms = ?", (since,))
+    add_decision(setup, 2, received_ms=since - 1)
+    result = batch(setup, live=False)
+    assert result["listed"] == 1 and result["plans"][0]["message_id"] == "m1"
+    assert result["skip_reasons"] == [{"decision_id": 2, "reason": "before_enabled_since"}]
+
+
+def test_batch_one_profile_label_and_token_check_for_multiple_messages(setup, tokeninfo):
+    add_decision(setup, 2, disposition="DIGEST")
+    result = batch(setup)
+    assert result["listed"] == result["filed"] == 2 and result["skipped"] == 0
+    assert [kind for kind, _ in setup.api.calls].count("profile") == 1
+    assert [kind for kind, _ in setup.api.calls].count("labels") == 1
+    assert [kind for kind, _ in setup.api.calls].count("get") == 2
+    assert len(tokeninfo) == 1 and len(setup.api.writes) == 2
+    assert "INBOX" in setup.api.states["m2"]
+
+
+def test_batch_stops_on_first_uncertainty(setup, tokeninfo):
+    add_decision(setup, 2)
+    setup.api.behavior = "timeout_after"
+    result = batch(setup)
+    assert result["state"] == "uncertain" and result["listed"] == 2 and result["filed"] == 0
+    assert result["skip_reasons"] == [{"decision_id": 2, "reason": "stopped_after_uncertain"}]
+    assert len(setup.api.writes) == 1 and len(tokeninfo) == 1
+    assert "INBOX" in setup.api.states["m2"]
+
+
+def test_batch_continues_past_per_message_block_and_audits_it(setup):
+    add_decision(setup, 2)
+    setup.api.state.add("SPAM")
+    result = batch(setup)
+    assert result["filed"] == 1 and result["skipped"] == 1 and result["state"] == "blocked"
+    assert result["results"][0]["decision_id"] == 2 and len(setup.api.writes) == 1
+    assert setup.db.execute("SELECT count(*) FROM events WHERE result = 'blocked'").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("live", [False, True])
+def test_batch_cap_is_100_and_completed_rows_do_not_starve_next_run(setup, live, tokeninfo):
+    for number in range(2, 103):
+        add_decision(setup, number)
+    first = batch(setup, live=live)
+    assert first["listed"] == 100 and first["capped"]
+    assert [kind for kind, _ in setup.api.calls].count("get") == 100
+    assert len(setup.api.writes) == (100 if live else 0)
+    assert len(tokeninfo) == (1 if live else 0)
+    if live:
+        second = batch(setup)
+        assert second["listed"] == second["filed"] == 2 and second["skipped"] == 100
+        assert len(setup.api.writes) == 102
+
+
+@pytest.mark.parametrize("state", ["filing_in_flight", "uncertain", "undo_in_flight", "undo_uncertain"])
+def test_batch_does_not_bypass_blocking_states(setup, state):
+    op = run(setup)["operation_id"]
+    filing._state(setup.db, filing._operation(setup.db, op), state, "file")
+    result = batch(setup)
+    assert result["listed"] == 0 and result["skipped"] == 1
+    assert result["skip_reasons"][0]["reason"] == f"reserved_{state}"
+    assert len(setup.api.writes) == 1
+
+
+@pytest.mark.parametrize("state", ["undone", "not_applied"])
+def test_batch_refiles_only_refileable_rows(setup, state):
+    op = run(setup)["operation_id"]
+    undo(setup, op)
+    filing._state(setup.db, filing._operation(setup.db, op), state, "file")
+    result = batch(setup)
+    assert result["listed"] == result["filed"] == 1
+    assert result["results"][0]["operation_id"] == op
+
+
+@pytest.mark.parametrize("version", [0, 1])
+@pytest.mark.parametrize("populated", [False, True])
+def test_old_audit_schema_is_recreated_only_without_operations(setup, version, populated):
+    path = setup.root / f"legacy-{version}-{populated}.db"
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE operations (id TEXT)")
+        db.execute(f"PRAGMA user_version = {version}")
+        if populated:
+            db.execute("INSERT INTO operations VALUES ('synthetic-existing-operation')")
+    before = path.read_bytes()
+    if populated:
+        with pytest.raises(filing.FilingError, match="audit schema is older than this executor"):
+            filing.connect(path)
+        assert path.read_bytes() == before
+    else:
+        db = filing.connect(path)
+        try:
+            assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+            assert "disposition" in {r[1] for r in db.execute("PRAGMA table_info(operations)")}
+        finally:
+            db.close()
+
+
+def cli_args(s, command):
+    return ["--audit", str(s.root / "cli.db"), "--config", str(s.config),
+            "--token", str(s.root / "token.json"), *command]
+
+
+@pytest.mark.parametrize("command,expected", [("file", 3), ("run", 3)])
+def test_cli_uncertainty_is_exit_3_and_connection_is_closed(setup, monkeypatch, command, expected):
+    monkeypatch.setattr(filing, "PRIVATE_ROOT", setup.root)
+    monkeypatch.setattr(filing, "open_api", lambda *a: (setup.api, setup.credentials))
+    setup.api.behavior = "timeout_after"
+    connections = []
+    original = filing.connect
+
+    def connect(path):
+        db = original(path)
+        connections.append(db)
+        return db
+    monkeypatch.setattr(filing, "connect", connect)
+    cmd = [command] + (["1"] if command == "file" else []) + ["--live", "--shadow-db", str(setup.shadow)]
+    with pytest.raises(SystemExit) as error:
+        filing.main(cli_args(setup, cmd))
+    assert error.value.code == expected
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        connections[0].execute("SELECT 1")
+
+
+def test_cli_rejects_removed_approval_flag_and_blocks_with_exit_2(setup, monkeypatch):
+    monkeypatch.setattr(filing, "PRIVATE_ROOT", setup.root)
+    monkeypatch.setattr(filing, "open_api", lambda *a: pytest.fail("blocked request opened credentials"))
+    change_config(setup, lambda c: c.update(kill_switch=True))
+    for extra in ([], ["--approval", APPROVAL]):
+        with pytest.raises(SystemExit) as error:
+            filing.main(cli_args(setup, ["file", "1", "--live", "--shadow-db", str(setup.shadow), *extra]))
+        assert error.value.code == 2
